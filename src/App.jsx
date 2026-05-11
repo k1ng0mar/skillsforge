@@ -53,15 +53,14 @@ async function callAI(prompt, sys) {
     method: "POST",
     headers: { 
       "Content-Type": "application/json",
-      // Don't forget to pass your API key; Anthropic usually requires 'x-api-key', 
-      // but Groq uses standard Bearer auth.
-      "Authorization": `Bearer YOUR_GROQ_API_KEY` 
+      // Groq uses standard Bearer auth.
+      "Authorization": `Bearer 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` 
     },
     body: JSON.stringify({
-      // You can swap this for "mixtral-8x7b-32768" or "llama3-8b-8192"
+      // can swap this for "mixtral-8x7b-32768" or "llama3-8b-8192"
       model: "llama-3.3-70b-versatile", 
       max_tokens: 1000,
-      response_format: { type: "json_object" }, // Forces JSON output on Groq
+      response_format: { type: "json_object" },
       messages: [
         { 
           role: "system", 
