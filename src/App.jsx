@@ -49,19 +49,38 @@ const useT = () => useContext(Ctx);
 
 /* ─── AI ─── */
 async function callAI(prompt, sys) {
-  const r = await fetch("https://api.anthropic.com/v1/messages", {
+  const r = await fetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { 
+      "Content-Type": "application/json",
+      // Don't forget to pass your API key; Anthropic usually requires 'x-api-key', 
+      // but Groq uses standard Bearer auth.
+      "Authorization": `Bearer YOUR_GROQ_API_KEY` 
+    },
     body: JSON.stringify({
-      model: "claude-sonnet-4-20250514",
+      // You can swap this for "mixtral-8x7b-32768" or "llama3-8b-8192"
+      model: "llama-3.3-70b-versatile", 
       max_tokens: 1000,
-      system: sys + "\n\nReturn ONLY valid JSON. No markdown fences, no preamble.",
-      messages: [{ role: "user", content: prompt }],
+      response_format: { type: "json_object" }, // Forces JSON output on Groq
+      messages: [
+        { 
+          role: "system", 
+          content: sys + "\n\nReturn ONLY valid JSON. No markdown fences, no preamble." 
+        },
+        { 
+          role: "user", 
+          content: prompt 
+        }
+      ],
     }),
   });
+
   if (!r.ok) throw new Error(r.status);
+  
   const d = await r.json();
-  const raw = d.content?.find(b => b.type === "text")?.text || "";
+  // Groq returns the text here
+  const raw = d.choices?.[0]?.message?.content || "";
+  
   return JSON.parse(raw.replace(/```json|```/g, "").trim());
 }
 
