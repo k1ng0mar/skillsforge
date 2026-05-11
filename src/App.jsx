@@ -1,944 +1,1484 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, createContext, useContext } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
-const FONTS = `
-@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,700;0,9..144,800;1,9..144,500&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500;600&display=swap');
+/* ─── FONTS + RESET ─── */
+const BASE = `
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,600;0,9..144,700;0,9..144,800;1,9..144,400&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-html { scroll-behavior: smooth; }
-body, #root { background: #F5F3EE; min-height: 100vh; }
-input, textarea { font-family: inherit; }
-input:focus { outline: none; }
-button { cursor: pointer; font-family: inherit; border: none; }
+html, body, #root { min-height: 100%; }
+input, textarea { font-family: inherit; resize: none; }
+input:focus, textarea:focus { outline: none; }
+button { cursor: pointer; font-family: inherit; border: none; background: none; }
 ::-webkit-scrollbar { width: 4px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.1); border-radius: 4px; }
-::selection { background: #C3E6CB; color: #0A2E14; }
-.lesson-layout { display: grid; grid-template-columns: 1fr 260px; gap: 24px; align-items: start; }
-@media (max-width: 820px) { .lesson-layout { grid-template-columns: 1fr !important; } }
+::-webkit-scrollbar-thumb { background: rgba(128,128,128,0.15); border-radius: 4px; }
 `;
 
-const T = {
-  forest: '#0A1E10', forestMd: '#142A1A', forestHov: '#1A3520',
-  cream: '#F5F3EE', white: '#FFFFFF', paper: '#FAFAF7',
-  green: '#1A7A3C', greenHov: '#15632F', greenLt: '#E9F5EE', greenTxt: '#0F5C2A',
-  amber: '#C97A10', amberLt: '#FEF3C7', amberMd: '#F59E0B',
-  blue: '#1D4ED8', blueLt: '#EFF6FF', blueTxt: '#1E40AF',
-  red: '#DC2626', redLt: '#FEF2F2',
-  purple: '#7C3AED', purpleLt: '#F3F0FF',
-  txt: '#0D1117', muted: '#4B5563', dim: '#9CA3AF',
-  border: 'rgba(0,0,0,0.07)', borderMd: 'rgba(0,0,0,0.12)',
+/* ─── THEMES ─── */
+const DARK = {
+  bg: '#090A0C', surface: '#14171C', lift: '#1B1F27',
+  primary: '#00F0FF', pDim: 'rgba(0,240,255,0.1)', pLine: 'rgba(0,240,255,0.28)',
+  success: '#00FF94', sDim: 'rgba(0,255,148,0.1)', sLine: 'rgba(0,255,148,0.28)',
+  danger: '#FF0055', rDim: 'rgba(255,0,85,0.1)', rLine: 'rgba(255,0,85,0.28)',
+  amber: '#F59E0B', aDim: 'rgba(245,158,11,0.1)', aLine: 'rgba(245,158,11,0.28)',
+  txt: '#F1F3F5', muted: '#8B95A5', faint: '#3A4255',
+  line: 'rgba(255,255,255,0.07)', lineMd: 'rgba(255,255,255,0.13)',
+  glow: (hex) => `0 0 28px ${hex}30, 0 4px 14px ${hex}18`,
+  navBg: 'rgba(9,10,12,0.92)',
 };
-const ff = { serif: "'Fraunces', Georgia, serif", sans: "'DM Sans', sans-serif", mono: "'JetBrains Mono', monospace" };
+const LIGHT = {
+  bg: '#F4F2EC', surface: '#FFFFFF', lift: '#EEECE6',
+  primary: '#007A8C', pDim: 'rgba(0,122,140,0.08)', pLine: 'rgba(0,122,140,0.22)',
+  success: '#0A7C40', sDim: 'rgba(10,124,64,0.08)', sLine: 'rgba(10,124,64,0.22)',
+  danger: '#C01044', rDim: 'rgba(192,16,68,0.08)', rLine: 'rgba(192,16,68,0.22)',
+  amber: '#B45309', aDim: 'rgba(180,83,9,0.08)', aLine: 'rgba(180,83,9,0.22)',
+  txt: '#0D1117', muted: '#4B5563', faint: '#C4C9D4',
+  line: 'rgba(0,0,0,0.07)', lineMd: 'rgba(0,0,0,0.13)',
+  glow: () => 'none',
+  navBg: 'rgba(244,242,236,0.92)',
+};
 
-async function callAI(userMsg, system) {
+const ff = {
+  serif: "'Fraunces', Georgia, serif",
+  sans: "'Plus Jakarta Sans', sans-serif",
+  mono: "'JetBrains Mono', monospace",
+};
+
+/* ─── CONTEXT ─── */
+const Ctx = createContext(null);
+const useT = () => useContext(Ctx);
+
+/* ─── AI ─── */
+async function callAI(prompt, sys) {
   const r = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       model: "claude-sonnet-4-20250514",
       max_tokens: 1000,
-      system: system + "\n\nReturn ONLY valid JSON. No markdown fences, no preamble, no trailing text.",
-      messages: [{ role: "user", content: userMsg }],
+      system: sys + "\n\nReturn ONLY valid JSON. No markdown fences, no preamble.",
+      messages: [{ role: "user", content: prompt }],
     }),
   });
-  if (!r.ok) throw new Error(`${r.status}`);
+  if (!r.ok) throw new Error(r.status);
   const d = await r.json();
   const raw = d.content?.find(b => b.type === "text")?.text || "";
   return JSON.parse(raw.replace(/```json|```/g, "").trim());
 }
 
-/* ── PRIMITIVES ── */
-function Tag({ label, color = T.green, bg = T.greenLt }) {
-  return <span style={{ fontFamily: ff.mono, fontSize: 10, fontWeight: 600, letterSpacing: 0.4, color, background: bg, padding: '2px 8px', borderRadius: 4, whiteSpace: 'nowrap', textTransform: 'uppercase' }}>{label}</span>;
-}
-function Badge({ children, color = T.greenTxt, bg = T.greenLt }) {
-  return <span style={{ fontFamily: ff.sans, fontSize: 12, fontWeight: 600, color, background: bg, padding: '3px 10px', borderRadius: 999, display: 'inline-flex', alignItems: 'center', gap: 4 }}>{children}</span>;
-}
-function ProgressBar({ pct, color = T.green, height = 5, delay = 0 }) {
+/* ─── PRIMITIVES ─── */
+function Bar({ pct, color, h = 4, delay = 0 }) {
+  const { t } = useT();
   return (
-    <div style={{ height, background: T.border, borderRadius: height, overflow: 'hidden' }}>
-      <motion.div initial={{ width: 0 }} animate={{ width: `${Math.min(pct, 100)}%` }}
-        transition={{ duration: 0.8, ease: [0.22,1,0.36,1], delay }}
-        style={{ height: '100%', background: color, borderRadius: height }} />
+    <div style={{ height: h, background: t.line, borderRadius: h, overflow: 'hidden' }}>
+      <motion.div
+        initial={{ width: 0 }}
+        animate={{ width: `${Math.min(pct, 100)}%` }}
+        transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1], delay }}
+        style={{ height: '100%', background: color || t.primary, borderRadius: h }}
+      />
     </div>
   );
 }
-function Ring({ pct = 0, size = 36, stroke = 2.5, color = T.green }) {
-  const r = (size - stroke * 2) / 2, c = r * 2 * Math.PI;
+
+function Ring({ pct = 0, size = 56, stroke = 3.5, color }) {
+  const { t } = useT();
+  const c = color || t.primary;
+  const r = (size - stroke * 2) / 2;
+  const circ = r * 2 * Math.PI;
   return (
     <svg width={size} height={size} style={{ transform: 'rotate(-90deg)', flexShrink: 0 }}>
-      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={T.border} strokeWidth={stroke}/>
-      <motion.circle cx={size/2} cy={size/2} r={r} fill="none" stroke={color}
-        strokeWidth={stroke} strokeLinecap="round" strokeDasharray={c}
-        initial={{ strokeDashoffset: c }} animate={{ strokeDashoffset: c - (pct/100)*c }}
+      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={t.line} strokeWidth={stroke}/>
+      <motion.circle cx={size/2} cy={size/2} r={r} fill="none" stroke={c}
+        strokeWidth={stroke} strokeLinecap="round" strokeDasharray={circ}
+        initial={{ strokeDashoffset: circ }}
+        animate={{ strokeDashoffset: circ - (pct / 100) * circ }}
         transition={{ duration: 0.9, ease: 'easeOut', delay: 0.15 }}/>
     </svg>
   );
 }
-function Card({ children, style, onClick }) {
-  const [h, sH] = useState(false);
+
+function Tag({ label, color, dim, border }) {
+  const { t } = useT();
   return (
-    <motion.div onHoverStart={() => sH(true)} onHoverEnd={() => sH(false)} onClick={onClick}
-      style={{ background: T.white, border: `1px solid ${h && onClick ? T.borderMd : T.border}`,
-        borderRadius: 12, boxShadow: h && onClick ? '0 4px 16px rgba(0,0,0,0.07)' : '0 1px 3px rgba(0,0,0,0.04)',
-        cursor: onClick ? 'pointer' : 'default', transition: 'border-color 0.15s, box-shadow 0.15s', ...style }}>
-      {children}
-    </motion.div>
+    <span style={{
+      fontFamily: ff.mono, fontSize: 10, fontWeight: 600,
+      letterSpacing: 0.8, textTransform: 'uppercase',
+      color: color || t.primary,
+      background: dim || t.pDim,
+      border: `1px solid ${border || t.pLine}`,
+      padding: '3px 9px', borderRadius: 999,
+      display: 'inline-block', whiteSpace: 'nowrap',
+    }}>{label}</span>
   );
 }
-function Btn({ children, onClick, variant = 'primary', style, disabled, full }) {
-  const [h, sH] = useState(false);
-  const vs = {
-    primary: { bg: T.green, hov: T.greenHov, clr: '#fff', b: 'none', sh: '0 1px 3px rgba(26,122,60,0.3)' },
-    outline: { bg: T.white, hov: T.cream, clr: T.txt, b: `1px solid ${T.borderMd}`, sh: '0 1px 2px rgba(0,0,0,0.04)' },
-    ghost:   { bg: 'transparent', hov: 'rgba(0,0,0,0.04)', clr: T.muted, b: `1px solid ${T.border}`, sh: 'none' },
-    danger:  { bg: T.redLt, hov: '#fde0e0', clr: T.red, b: `1px solid rgba(220,38,38,0.2)`, sh: 'none' },
-    success: { bg: T.greenLt, hov: '#d5eddd', clr: T.greenTxt, b: `1px solid rgba(26,122,60,0.18)`, sh: 'none' },
-    dark:    { bg: T.forest, hov: T.forestHov, clr: '#E8F5EC', b: 'none', sh: '0 1px 4px rgba(0,0,0,0.25)' },
+
+function Card({ children, style, onClick, glow }) {
+  const { t, dark } = useT();
+  const [hov, setHov] = useState(false);
+  return (
+    <motion.div
+      onHoverStart={() => setHov(true)}
+      onHoverEnd={() => setHov(false)}
+      onClick={onClick}
+      whileTap={onClick ? { scale: 0.99 } : {}}
+      style={{
+        background: t.surface,
+        border: `1px solid ${hov && onClick ? t.lineMd : t.line}`,
+        borderRadius: 16,
+        boxShadow: glow && dark ? t.glow(t.primary) : 'none',
+        cursor: onClick ? 'pointer' : 'default',
+        transition: 'border-color 0.15s',
+        ...style,
+      }}
+    >{children}</motion.div>
+  );
+}
+
+function Btn({ children, onClick, v = 'primary', style, disabled, full }) {
+  const { t, dark } = useT();
+  const [hov, setHov] = useState(false);
+  const variants = {
+    primary: { bg: t.primary, clr: '#000', border: 'none', hov: dark ? '#44F6FF' : '#005A68' },
+    outline: { bg: 'transparent', clr: t.primary, border: `1px solid ${t.pLine}`, hov: t.pDim },
+    ghost:   { bg: 'transparent', clr: t.muted, border: `1px solid ${t.line}`, hov: t.line },
+    success: { bg: t.sDim, clr: t.success, border: `1px solid ${t.sLine}`, hov: `${t.success}22` },
+    danger:  { bg: t.rDim, clr: t.danger, border: `1px solid ${t.rLine}`, hov: `${t.danger}22` },
+    amber:   { bg: t.aDim, clr: t.amber, border: `1px solid ${t.aLine}`, hov: `${t.amber}22` },
   };
-  const s = vs[variant] || vs.primary;
+  const s = variants[v] || variants.primary;
   return (
-    <motion.button whileTap={!disabled ? { scale: 0.97 } : {}}
-      onMouseEnter={() => sH(true)} onMouseLeave={() => sH(false)}
-      onClick={onClick} disabled={disabled}
-      style={{ background: h && !disabled ? s.hov : s.bg, color: s.clr, border: s.b,
-        boxShadow: s.sh, borderRadius: 8, padding: '9px 18px', fontFamily: ff.sans,
-        fontSize: 14, fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 6,
-        width: full ? '100%' : 'auto', justifyContent: full ? 'center' : 'flex-start',
-        opacity: disabled ? 0.5 : 1, transition: 'background 0.15s', cursor: disabled ? 'not-allowed' : 'pointer', ...style }}>
-      {children}
-    </motion.button>
+    <motion.button
+      whileTap={!disabled ? { scale: 0.97 } : {}}
+      onMouseEnter={() => setHov(true)}
+      onMouseLeave={() => setHov(false)}
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        background: hov && !disabled ? s.hov : s.bg,
+        color: s.clr, border: s.border,
+        borderRadius: 12, padding: '11px 20px',
+        fontFamily: ff.sans, fontSize: 14, fontWeight: 700,
+        letterSpacing: v === 'primary' ? 0.5 : 0,
+        display: 'inline-flex', alignItems: 'center',
+        justifyContent: 'center', gap: 7,
+        width: full ? '100%' : 'auto',
+        opacity: disabled ? 0.4 : 1,
+        transition: 'background 0.13s',
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        ...style,
+      }}
+    >{children}</motion.button>
   );
 }
 
-/* ── SIDEBAR ── */
-const NAV = [
-  { id: 'curriculum', icon: '◫', label: 'My Path' },
-  { id: 'progress',   icon: '◎', label: 'Progress' },
-];
-
-function Sidebar({ view, onNav, xp, completedCount, totalLessons }) {
-  const level = Math.floor(xp / 200) + 1;
+function Empty({ msg, action, onAction }) {
+  const { t } = useT();
   return (
-    <motion.aside initial={{ x: -220 }} animate={{ x: 0 }} transition={{ duration: 0.38, ease: [0.22,1,0.36,1] }}
-      style={{ position: 'fixed', top: 0, left: 0, bottom: 0, width: 210,
-        background: T.forest, zIndex: 100, display: 'flex', flexDirection: 'column',
-        borderRight: '1px solid rgba(255,255,255,0.04)' }}>
-
-      <div style={{ padding: '20px 18px 14px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-          <div style={{ width: 28, height: 28, borderRadius: 7, background: T.green,
-            display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, flexShrink: 0 }}>⚡</div>
-          <span style={{ fontFamily: ff.serif, fontSize: 17, fontWeight: 700, color: '#E8F5EC', letterSpacing: '-0.2px' }}>Forge</span>
-        </div>
+    <div style={{
+      display: 'flex', flexDirection: 'column',
+      alignItems: 'center', justifyContent: 'center',
+      minHeight: '55vh', padding: '32px 28px', textAlign: 'center',
+    }}>
+      <div style={{
+        width: 52, height: 52, borderRadius: '50%',
+        background: t.surface, border: `1px solid ${t.lineMd}`,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        marginBottom: 16,
+      }}>
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={t.muted} strokeWidth="2" strokeLinecap="round">
+          <path d="M12 5v14M5 12h14"/>
+        </svg>
       </div>
-
-      <nav style={{ flex: 1, padding: '10px 8px', display: 'flex', flexDirection: 'column', gap: 2 }}>
-        {NAV.map(item => {
-          const active = view === item.id || (item.id === 'curriculum' && ['lesson','quiz','flashcards'].includes(view));
-          return (
-            <button key={item.id} onClick={() => onNav(item.id)}
-              style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '8px 11px',
-                borderRadius: 7, background: active ? 'rgba(34,163,80,0.16)' : 'transparent',
-                border: active ? '1px solid rgba(34,163,80,0.28)' : '1px solid transparent',
-                color: active ? '#7DDA9B' : 'rgba(255,255,255,0.4)',
-                transition: 'all 0.13s', cursor: 'pointer',
-                fontFamily: ff.sans, fontSize: 13.5, fontWeight: active ? 600 : 400 }}
-              onMouseEnter={e => { if (!active) { e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; e.currentTarget.style.color = 'rgba(255,255,255,0.7)'; }}}
-              onMouseLeave={e => { if (!active) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'rgba(255,255,255,0.4)'; }}}>
-              <span style={{ fontSize: 14, width: 16, textAlign: 'center' }}>{item.icon}</span>
-              {item.label}
-            </button>
-          );
-        })}
-      </nav>
-
-      <div style={{ padding: '10px 12px 18px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-        <div style={{ background: 'rgba(255,255,255,0.05)', borderRadius: 9, padding: '11px 13px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 7 }}>
-            <span style={{ fontFamily: ff.sans, fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>Level {level}</span>
-            <span style={{ fontFamily: ff.mono, fontSize: 10, color: '#7DDA9B', fontWeight: 600 }}>{xp} XP</span>
-          </div>
-          <div style={{ height: 3, background: 'rgba(255,255,255,0.08)', borderRadius: 2, overflow: 'hidden' }}>
-            <motion.div animate={{ width: `${(xp % 200) / 200 * 100}%` }}
-              style={{ height: '100%', background: T.green, borderRadius: 2 }} transition={{ duration: 0.6 }}/>
-          </div>
-        </div>
-      </div>
-    </motion.aside>
+      <p style={{ fontFamily: ff.sans, fontSize: 15, color: t.muted, marginBottom: action ? 20 : 0, lineHeight: 1.6 }}>
+        {msg}
+      </p>
+      {action && <Btn v="outline" onClick={onAction}>{action}</Btn>}
+    </div>
   );
 }
 
-/* ── HOME ── */
-const SUGGESTIONS = [
-  { label: 'Python',        emoji: '🐍', color: T.blue,   bg: T.blueLt   },
-  { label: 'UI/UX Design',  emoji: '🎨', color: T.amber,  bg: T.amberLt  },
-  { label: 'Web Dev',       emoji: '🌐', color: T.green,  bg: T.greenLt  },
-  { label: 'Data Science',  emoji: '📊', color: T.purple, bg: T.purpleLt },
-  { label: 'Machine Learning', emoji: '🤖', color: T.blue, bg: T.blueLt  },
-  { label: 'Photography',   emoji: '📷', color: '#DB2777', bg: '#FDF2F8' },
-  { label: 'Public Speaking', emoji: '🎤', color: T.green, bg: T.greenLt },
-  { label: 'Marketing',     emoji: '📣', color: T.amber,  bg: T.amberLt  },
-];
+/* ─── NAV ICONS ─── */
+const JourneyIcon = ({ c }) => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round">
+    <path d="M3 12 C5.5 4 8 4 10 12 C12 20 14.5 20 17 12 C18.5 7 20 7 21 12"/>
+  </svg>
+);
+const TreeIcon = ({ c }) => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round">
+    <circle cx="12" cy="4" r="2"/><circle cx="5" cy="19" r="2"/><circle cx="19" cy="19" r="2"/>
+    <line x1="12" y1="6" x2="12" y2="14"/>
+    <line x1="12" y1="14" x2="5" y2="17"/>
+    <line x1="12" y1="14" x2="19" y2="17"/>
+  </svg>
+);
+const GenIcon = ({ c }) => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill={c}>
+    <path d="M13 2L4 13h7l-1 9 9-11h-7l1-9z"/>
+  </svg>
+);
+
+/* ─── BOTTOM NAV ─── */
+function BottomNav({ tab, setTab }) {
+  const { t, dark } = useT();
+  const items = [
+    { id: 'journey', label: 'Journey', icon: JourneyIcon },
+    { id: 'tree', label: 'Skill Tree', icon: TreeIcon },
+    { id: 'gen', label: 'Generate', icon: GenIcon },
+  ];
+  return (
+    <div style={{
+      position: 'fixed', bottom: 0,
+      left: '50%', transform: 'translateX(-50%)',
+      width: 'min(100%, 430px)', height: 68,
+      background: t.navBg,
+      backdropFilter: 'blur(16px)',
+      borderTop: `1px solid ${t.line}`,
+      display: 'flex', zIndex: 200,
+    }}>
+      {items.map(item => {
+        const active = tab === item.id;
+        const color = active ? t.primary : t.muted;
+        return (
+          <button key={item.id} onClick={() => setTab(item.id)}
+            style={{
+              flex: 1, display: 'flex', flexDirection: 'column',
+              alignItems: 'center', justifyContent: 'center', gap: 4,
+              color, fontFamily: ff.sans, fontSize: 11,
+              fontWeight: active ? 600 : 400, transition: 'color 0.15s',
+            }}>
+            <item.icon c={color}/>
+            {item.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ─── HOME / GENERATOR ─── */
+const CHIPS = ['Advanced Rust', 'Quantum Physics', 'Machine Learning', 'Neuroscience', 'Options Trading', 'System Design', 'Stoic Philosophy'];
 
 function HomeView({ onGenerate }) {
+  const { t, dark, toggle } = useT();
   const [val, setVal] = useState('');
+  const [scope, setScope] = useState('Standard');
   const ref = useRef();
-  useEffect(() => { setTimeout(() => ref.current?.focus(), 350); }, []);
-  const go = (v) => { const s = (v || val).trim(); if (s) onGenerate(s); };
+
+  useEffect(() => { setTimeout(() => ref.current?.focus(), 300); }, []);
+
+  const go = (v) => {
+    const s = (v || val).trim();
+    if (s) onGenerate(s, scope);
+  };
+
+  const active = val.trim().length > 0;
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column',
-      alignItems: 'center', justifyContent: 'center', padding: '60px 20px', background: T.cream }}>
-      <motion.div initial={{ opacity: 0, y: 22 }} animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.42, ease: [0.22,1,0.36,1] }}
-        style={{ width: '100%', maxWidth: 540, textAlign: 'center' }}>
+    <div style={{
+      minHeight: '100vh', background: t.bg,
+      display: 'flex', flexDirection: 'column',
+    }}>
+      {/* top bar */}
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: '16px 20px',
+      }}>
+        <span style={{ fontFamily: ff.serif, fontSize: 18, fontWeight: 700, color: t.txt, letterSpacing: '-0.3px' }}>
+          SkillsForge
+        </span>
+        <button onClick={toggle} style={{
+          width: 34, height: 34, borderRadius: 8,
+          background: t.surface, border: `1px solid ${t.line}`,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          color: t.muted, fontSize: 15,
+        }}>
+          {dark ? '○' : '●'}
+        </button>
+      </div>
 
-        <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}
-          transition={{ delay: 0.05 }}
-          style={{ display: 'inline-flex', alignItems: 'center', gap: 7,
-            background: T.greenLt, border: `1px solid rgba(26,122,60,0.18)`,
-            borderRadius: 999, padding: '5px 14px 5px 8px', marginBottom: 26 }}>
-          <div style={{ width: 20, height: 20, borderRadius: 5, background: T.green,
-            display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11 }}>⚡</div>
-          <span style={{ fontFamily: ff.sans, fontSize: 12, fontWeight: 600, color: T.greenTxt }}>AI-Powered Curriculum</span>
-        </motion.div>
-
-        <motion.h1 initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.08 }}
-          style={{ fontFamily: ff.serif, fontSize: 'clamp(36px,7vw,62px)', fontWeight: 800,
-            color: T.txt, letterSpacing: '-2px', lineHeight: 1.04, marginBottom: 14 }}>
-          Master any skill<br />
-          <em style={{ fontStyle: 'italic', color: T.green }}>from scratch.</em>
+      <div style={{ flex: 1, padding: '28px 24px 0' }}>
+        <motion.h1
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+          style={{
+            fontFamily: ff.serif, fontSize: 'clamp(30px, 8vw, 38px)',
+            fontWeight: 700, color: t.txt,
+            letterSpacing: '-1px', lineHeight: 1.18, marginBottom: 10,
+          }}
+        >
+          What do you want to{' '}
+          <em style={{ fontStyle: 'italic', color: t.primary }}>master</em>{' '}
+          today?
         </motion.h1>
 
-        <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.14 }}
-          style={{ fontFamily: ff.sans, fontSize: 15.5, color: T.muted, lineHeight: 1.68,
-            marginBottom: 32, maxWidth: 430, margin: '0 auto 32px' }}>
-          Tell the AI what you want to learn. It builds your full curriculum — lessons, quizzes, flashcards — instantly.
+        <motion.p
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.1 }}
+          style={{ fontFamily: ff.sans, fontSize: 15, color: t.muted, lineHeight: 1.65, marginBottom: 32 }}
+        >
+          Describe your goal. We'll forge a custom curriculum.
         </motion.p>
 
-        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.18 }}
-          style={{ display: 'flex', gap: 8, marginBottom: 18 }}>
-          <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 10,
-            background: T.white, border: `1px solid ${T.borderMd}`, borderRadius: 10,
-            padding: '10px 15px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
-            <span style={{ color: T.dim, fontSize: 15 }}>🔍</span>
-            <input ref={ref} value={val} onChange={e => setVal(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && go()}
-              placeholder="e.g. Machine learning, Guitar, Python…"
-              style={{ flex: 1, border: 'none', background: 'none', fontFamily: ff.sans, fontSize: 15, color: T.txt }}/>
-          </div>
-          <Btn variant="primary" onClick={() => go()} disabled={!val.trim()}
-            style={{ padding: '10px 22px', borderRadius: 10, flexShrink: 0 }}>
-            Build →
-          </Btn>
+        {/* input */}
+        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}>
+          <textarea
+            ref={ref}
+            value={val}
+            onChange={e => setVal(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); go(); } }}
+            placeholder="e.g. I want to build a physics engine in Rust..."
+            rows={3}
+            style={{
+              width: '100%', background: 'transparent', border: 'none',
+              borderBottom: `2px solid ${active ? t.primary : t.lineMd}`,
+              fontFamily: ff.serif, fontSize: 20, color: t.txt,
+              padding: '8px 0 14px', lineHeight: 1.5, transition: 'border-color 0.2s',
+            }}
+          />
         </motion.div>
 
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.26 }}
-          style={{ display: 'flex', flexWrap: 'wrap', gap: 7, justifyContent: 'center' }}>
-          {SUGGESTIONS.map((s, i) => (
-            <motion.button key={s.label}
-              initial={{ opacity: 0, scale: 0.88 }} animate={{ opacity: 1, scale: 1 }}
-              transition={{ delay: 0.3 + i * 0.04 }}
-              whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }}
-              onClick={() => go(s.label)}
-              style={{ background: s.bg, border: `1px solid rgba(0,0,0,0.06)`, borderRadius: 999,
-                padding: '6px 14px', fontFamily: ff.sans, fontSize: 13, fontWeight: 500,
-                color: s.color, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}>
-              {s.emoji} {s.label}
-            </motion.button>
-          ))}
+        {/* chips */}
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.22 }}
+          style={{ marginTop: 20, marginBottom: 28 }}>
+          <p style={{ fontFamily: ff.sans, fontSize: 11, color: t.muted, marginBottom: 10 }}>Popular prompts</p>
+          <div style={{ display: 'flex', gap: 7, overflowX: 'auto', paddingBottom: 4 }}>
+            {CHIPS.map(c => (
+              <button key={c} onClick={() => go(c)}
+                style={{
+                  fontFamily: ff.sans, fontSize: 12, fontWeight: 500,
+                  color: t.txt, background: t.surface,
+                  border: `1px solid ${t.lineMd}`,
+                  borderRadius: 999, padding: '6px 13px',
+                  whiteSpace: 'nowrap', flexShrink: 0,
+                  transition: 'background 0.12s',
+                }}>{c}</button>
+            ))}
+          </div>
         </motion.div>
-      </motion.div>
+
+        {/* scope selector */}
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.28 }}>
+          <p style={{ fontFamily: ff.sans, fontSize: 11, color: t.muted, marginBottom: 10 }}>Depth</p>
+          <div style={{
+            display: 'flex', background: t.surface,
+            border: `1px solid ${t.lineMd}`, borderRadius: 13, padding: 4, gap: 3,
+          }}>
+            {['Crash Course', 'Standard', 'Mastery'].map(s => {
+              const sel = scope === s;
+              return (
+                <button key={s} onClick={() => setScope(s)}
+                  style={{
+                    flex: 1, fontFamily: ff.sans, fontSize: 13.5,
+                    fontWeight: sel ? 700 : 400,
+                    color: sel ? (dark ? '#000' : '#fff') : t.muted,
+                    background: sel ? t.primary : 'transparent',
+                    borderRadius: 10, padding: '10px 6px',
+                    transition: 'all 0.14s', textAlign: 'center',
+                  }}>{s}</button>
+              );
+            })}
+          </div>
+        </motion.div>
+      </div>
+
+      {/* CTA */}
+      <div style={{ padding: '24px 24px 100px' }}>
+        <motion.button
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.32 }}
+          whileTap={active ? { scale: 0.97 } : {}}
+          onClick={() => go()}
+          disabled={!active}
+          style={{
+            width: '100%', height: 56,
+            background: active ? t.primary : t.surface,
+            color: active ? '#000' : t.muted,
+            border: 'none', borderRadius: 999,
+            fontFamily: ff.sans, fontSize: 15, fontWeight: 800, letterSpacing: 1,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 9,
+            boxShadow: active && dark ? t.glow(t.primary) : 'none',
+            transition: 'all 0.2s',
+            cursor: active ? 'pointer' : 'default',
+          }}
+        >
+          <svg width="17" height="17" viewBox="0 0 24 24" fill={active ? '#000' : t.muted}>
+            <path d="M12 23C8.4 23 5 20 5 16c0-2.8 1.8-5.1 4.4-7 .1.7.3 1.5.7 2.2 1.2-1.5 1.9-3.5 1.9-5.4 0-1.4-.5-2.8-1.5-4 2.8.3 5 1.9 6.2 4.3.5-.7.7-1.5.7-2.3C20 7.5 21 11 21 14c0 5-4 9-9 9z"/>
+          </svg>
+          IGNITE JOURNEY
+        </motion.button>
+      </div>
     </div>
   );
 }
 
-/* ── GENERATING ── */
-const GEN_STEPS = ['Analysing skill requirements…', 'Structuring learning modules…', 'Writing lesson outlines…', 'Finalising curriculum blueprint…'];
-function GeneratingView({ skill }) {
-  const [step, setStep] = useState(0);
-  const [pct, setPct] = useState(5);
-  useEffect(() => {
-    const t = setInterval(() => { setStep(s => Math.min(s+1,GEN_STEPS.length-1)); setPct(p => Math.min(p+22,92)); }, 1100);
-    return () => clearInterval(t);
-  }, []);
-  return (
-    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: T.cream, padding: 24 }}>
-      <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }}
-        style={{ width: '100%', maxWidth: 420, textAlign: 'center' }}>
-        <motion.div animate={{ rotate: 360 }} transition={{ duration: 1.8, repeat: Infinity, ease: 'linear' }}
-          style={{ width: 44, height: 44, borderRadius: '50%', border: `3px solid ${T.border}`,
-            borderTopColor: T.green, margin: '0 auto 24px' }}/>
-        <h2 style={{ fontFamily: ff.serif, fontSize: 28, fontWeight: 700, color: T.txt, letterSpacing: '-0.5px', marginBottom: 5 }}>
-          Building your path
-        </h2>
-        <p style={{ fontFamily: ff.sans, color: T.muted, fontSize: 14, marginBottom: 24 }}>
-          Personalising curriculum for <strong style={{ color: T.txt, fontWeight: 600 }}>{skill}</strong>
-        </p>
-        <Card style={{ padding: '18px 22px', marginBottom: 14 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 9 }}>
-            <AnimatePresence mode="wait">
-              <motion.span key={step} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }}
-                style={{ fontFamily: ff.sans, fontSize: 13, color: T.muted }}>{GEN_STEPS[step]}</motion.span>
-            </AnimatePresence>
-            <span style={{ fontFamily: ff.mono, fontSize: 12, color: T.green, fontWeight: 600 }}>{pct}%</span>
-          </div>
-          <ProgressBar pct={pct} color={T.green} height={4}/>
-        </Card>
-        <div style={{ display: 'flex', gap: 8 }}>
-          {[0,1,2,3].map(i => (
-            <motion.div key={i} animate={{ opacity: [0.25, 0.6, 0.25] }}
-              transition={{ duration: 1.3, repeat: Infinity, delay: i * 0.18 }}
-              style={{ flex: 1, height: 72, background: T.white, borderRadius: 10, border: `1px solid ${T.border}` }}/>
-          ))}
-        </div>
-      </motion.div>
-    </div>
-  );
-}
-
-/* ── CURRICULUM ── */
-const ACCENTS = [
-  { color: T.green,  bg: T.greenLt,  txt: T.greenTxt },
-  { color: T.blue,   bg: T.blueLt,   txt: T.blueTxt  },
-  { color: T.amber,  bg: T.amberLt,  txt: T.amber    },
-  { color: T.purple, bg: T.purpleLt, txt: '#5B21B6'  },
-  { color: '#DB2777', bg: '#FDF2F8', txt: '#9D174D'  },
+/* ─── GENERATING ─── */
+const GEN_STEPS = [
+  'Structuring syllabus…',
+  'Generating modules…',
+  'Writing lesson outlines…',
+  'Generating flashcards…',
+  'Finalising curriculum…',
 ];
 
-function LessonRow({ lesson, completed, onSelect }) {
-  const ts = { core: [T.blue, T.blueLt], practice: [T.amber, T.amberLt], project: [T.green, T.greenLt] };
-  const [c, bg] = ts[lesson.type] || ts.core;
-  return (
-    <motion.div whileHover={{ x: 2 }} onClick={() => onSelect(lesson)}
-      style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 11px',
-        borderRadius: 7, cursor: 'pointer', transition: 'background 0.12s' }}
-      onMouseEnter={e => e.currentTarget.style.background = T.cream}
-      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-      <div style={{ width: 18, height: 18, borderRadius: '50%', flexShrink: 0,
-        background: completed ? T.green : 'transparent',
-        border: `1.5px solid ${completed ? T.green : T.dim}`,
-        display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.18s' }}>
-        {completed && <span style={{ color: '#fff', fontSize: 10, fontWeight: 700 }}>✓</span>}
-      </div>
-      <span style={{ flex: 1, fontFamily: ff.sans, fontSize: 13.5, color: completed ? T.dim : T.txt,
-        textDecoration: completed ? 'line-through' : 'none', textDecorationColor: T.dim }}>
-        {lesson.title}
-      </span>
-      <Tag label={lesson.type} color={c} bg={bg}/>
-      <span style={{ fontFamily: ff.mono, fontSize: 10, color: T.dim, flexShrink: 0 }}>{lesson.duration}</span>
-    </motion.div>
-  );
-}
+function GeneratingView({ skill }) {
+  const { t, dark } = useT();
+  const [step, setStep] = useState(0);
 
-function ModuleCard({ mod, accentSet, completedCount, onSelectLesson }) {
-  const [open, setOpen] = useState(false);
-  const pct = mod.lessons.length > 0 ? Math.round((completedCount / mod.lessons.length) * 100) : 0;
+  useEffect(() => {
+    const id = setInterval(() => setStep(s => Math.min(s + 1, GEN_STEPS.length - 1)), 1300);
+    return () => clearInterval(id);
+  }, []);
+
   return (
-    <Card>
-      <div onClick={() => setOpen(o => !o)} style={{ padding: '16px 18px', cursor: 'pointer' }}>
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-          <div style={{ width: 38, height: 38, borderRadius: 9, background: accentSet.bg,
-            border: `1px solid rgba(0,0,0,0.06)`, display: 'flex', alignItems: 'center',
-            justifyContent: 'center', fontSize: 20, flexShrink: 0 }}>{mod.icon}</div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 2 }}>
-              <h3 style={{ fontFamily: ff.sans, fontSize: 14.5, fontWeight: 600, color: T.txt,
-                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{mod.title}</h3>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-                <Ring pct={pct} size={30} stroke={2.5} color={accentSet.color}/>
-                <motion.span animate={{ rotate: open ? 180 : 0 }} transition={{ duration: 0.18 }}
-                  style={{ display: 'block', color: T.dim, fontSize: 11 }}>▾</motion.span>
-              </div>
-            </div>
-            <p style={{ fontFamily: ff.sans, fontSize: 12.5, color: T.muted, lineHeight: 1.5,
-              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginBottom: 8 }}>
-              {mod.description}
-            </p>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <div style={{ flex: 1 }}><ProgressBar pct={pct} color={accentSet.color} height={3}/></div>
-              <span style={{ fontFamily: ff.mono, fontSize: 10, color: T.dim, flexShrink: 0 }}>{completedCount}/{mod.lessons.length}</span>
-            </div>
-          </div>
-        </div>
-      </div>
-      <AnimatePresence>
-        {open && (
-          <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.22 }}
-            style={{ overflow: 'hidden' }}>
-            <div style={{ height: 1, background: T.border }}/>
-            <div style={{ padding: '6px 10px 10px' }}>
-              {mod.lessons.map((l, i) => (
-                <motion.div key={l.id} initial={{ opacity: 0, x: -5 }} animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: i * 0.04 }}>
-                  <LessonRow lesson={l} completed={!!progress.completed[l.id]} onSelect={() => onSelectLesson(mod, l)}/>
-                </motion.div>
-              ))}
-            </div>
-          </motion.div>
-        )}
+    <div style={{
+      minHeight: '100vh', background: t.bg,
+      display: 'flex', flexDirection: 'column',
+      alignItems: 'center', justifyContent: 'center', padding: 32,
+    }}>
+      <motion.div
+        animate={{ rotate: 360 }}
+        transition={{ duration: 1.5, repeat: Infinity, ease: 'linear' }}
+        style={{
+          width: 52, height: 52, borderRadius: '50%',
+          border: `3px solid ${t.line}`,
+          borderTopColor: t.primary,
+          boxShadow: dark ? t.glow(t.primary) : 'none',
+          marginBottom: 28,
+        }}
+      />
+      <h2 style={{
+        fontFamily: ff.serif, fontSize: 28, fontWeight: 700,
+        color: t.txt, letterSpacing: '-0.5px', marginBottom: 8, textAlign: 'center',
+      }}>
+        Forging your path
+      </h2>
+      <p style={{ fontFamily: ff.sans, fontSize: 14, color: t.muted, marginBottom: 26, textAlign: 'center' }}>
+        Building curriculum for <strong style={{ color: t.txt }}>{skill}</strong>
+      </p>
+      <AnimatePresence mode="wait">
+        <motion.p key={step}
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -6 }}
+          transition={{ duration: 0.2 }}
+          style={{ fontFamily: ff.mono, fontSize: 13, color: t.primary }}
+        >
+          {GEN_STEPS[step]}
+        </motion.p>
       </AnimatePresence>
-    </Card>
+    </div>
   );
 }
 
-function CurriculumView({ curriculum, progress, onSelectLesson }) {
+/* ─── JOURNEY (DASHBOARD) ─── */
+function JourneyView({ curriculum, progress, onLesson, onArena, onTab }) {
+  const { t, dark } = useT();
+
+  if (!curriculum) {
+    return <Empty msg="No active journey yet." action="Generate one" onAction={() => onTab('gen')}/>;
+  }
+
+  let nextMod = null, nextLesson = null;
+  outer: for (const mod of curriculum.modules) {
+    for (const l of mod.lessons) {
+      if (!progress.completed[l.id]) { nextMod = mod; nextLesson = l; break outer; }
+    }
+  }
+
   const total = curriculum.modules.reduce((a, m) => a + m.lessons.length, 0);
   const done = Object.keys(progress.completed).length;
   const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+  const level = Math.floor(progress.xp / 200) + 1;
+  const xpInLevel = progress.xp % 200;
+  const dueCards = Math.max(0, (total - done) * 6);
+
   return (
-    <motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.32 }}
-      style={{ padding: '36px 32px 60px', maxWidth: 720, width: '100%' }}>
-      <p style={{ fontFamily: ff.mono, fontSize: 10, fontWeight: 600, letterSpacing: 1.5,
-        color: T.green, textTransform: 'uppercase', marginBottom: 7 }}>Learning Path</p>
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between',
-        gap: 20, flexWrap: 'wrap', marginBottom: 20 }}>
+    <div style={{ paddingBottom: 100, overflowY: 'auto', height: '100vh' }}>
+      {/* top bar */}
+      <div style={{ padding: '16px 20px 8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div>
-          <h1 style={{ fontFamily: ff.serif, fontSize: 'clamp(22px,3.5vw,36px)', fontWeight: 700,
-            color: T.txt, letterSpacing: '-0.8px', lineHeight: 1.1, marginBottom: 7 }}>{curriculum.title}</h1>
-          <p style={{ fontFamily: ff.sans, color: T.muted, fontSize: 14, maxWidth: 460, lineHeight: 1.65 }}>{curriculum.description}</p>
+          <p style={{ fontFamily: ff.mono, fontSize: 10, color: t.muted, letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: 3 }}>
+            Active Journey
+          </p>
+          <h1 style={{ fontFamily: ff.serif, fontSize: 22, fontWeight: 700, color: t.txt, letterSpacing: '-0.4px', lineHeight: 1.2, maxWidth: 220 }}>
+            {curriculum.title}
+          </h1>
         </div>
-        <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
-          {[[curriculum.modules.length, 'modules'], [total, 'lessons'], [curriculum.estimatedHours+'h', 'total']].map(([v, l]) => (
-            <div key={l} style={{ background: T.white, border: `1px solid ${T.border}`, borderRadius: 10,
-              padding: '9px 13px', textAlign: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
-              <div style={{ fontFamily: ff.mono, fontSize: 17, fontWeight: 600, color: T.txt }}>{v}</div>
-              <div style={{ fontFamily: ff.sans, fontSize: 10.5, color: T.dim, textTransform: 'uppercase', letterSpacing: 0.4 }}>{l}</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {/* streak */}
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 6,
+            background: t.sDim, border: `1px solid ${t.sLine}`,
+            borderRadius: 999, padding: '7px 13px',
+          }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill={t.success}>
+              <path d="M12 23C8.4 23 5 20 5 16c0-2.8 1.8-5.1 4.4-7 .1.7.3 1.5.7 2.2 1.2-1.5 1.9-3.5 1.9-5.4 0-1.4-.5-2.8-1.5-4 2.8.3 5 1.9 6.2 4.3.5-.7.7-1.5.7-2.3C20 7.5 21 11 21 14c0 5-4 9-9 9z"/>
+            </svg>
+            <span style={{ fontFamily: ff.mono, fontSize: 14, fontWeight: 700, color: t.success }}>
+              {progress.streak || 0}
+            </span>
+          </div>
+          {/* ring */}
+          <div style={{ position: 'relative' }}>
+            <Ring pct={pct} size={50} stroke={3.5}/>
+            <div style={{
+              position: 'absolute', inset: 0,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              <span style={{ fontFamily: ff.mono, fontSize: 10, fontWeight: 600, color: t.primary }}>{pct}%</span>
             </div>
-          ))}
-        </div>
-      </div>
-      <Card style={{ padding: '14px 18px', marginBottom: 20 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 9 }}>
-          <span style={{ fontFamily: ff.sans, fontSize: 13, fontWeight: 600, color: T.txt }}>Overall Progress</span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-            <span style={{ fontFamily: ff.mono, fontSize: 11.5, color: T.muted }}>{done}/{total}</span>
-            <Badge>{pct}%</Badge>
           </div>
         </div>
-        <ProgressBar pct={pct} height={6} delay={0.2}/>
-      </Card>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
-        {curriculum.modules.map((mod, i) => {
-          const ac = ACCENTS[i % ACCENTS.length];
-          const mc = mod.lessons.filter(l => progress.completed[l.id]).length;
+      </div>
+
+      <div style={{ padding: '12px 20px' }}>
+        {/* next up */}
+        {nextLesson ? (
+          <div style={{ marginBottom: 14 }}>
+            <p style={{ fontFamily: ff.sans, fontSize: 11, fontWeight: 600, color: t.muted, letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 8 }}>
+              Next Up
+            </p>
+            <Card glow onClick={() => onLesson(nextMod, nextLesson)}
+              style={{ padding: '18px 20px', border: `1px solid ${t.pLine}` }}>
+              <p style={{ fontFamily: ff.mono, fontSize: 10, color: t.primary, letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: 7 }}>
+                {nextMod.title}
+              </p>
+              <h2 style={{ fontFamily: ff.serif, fontSize: 24, fontWeight: 700, color: t.txt, lineHeight: 1.2, marginBottom: 14 }}>
+                {nextLesson.title}
+              </h2>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: t.muted }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>
+                  </svg>
+                  <span style={{ fontFamily: ff.sans, fontSize: 12 }}>Est. {nextLesson.duration}</span>
+                </div>
+                <span style={{ fontFamily: ff.sans, fontSize: 13, fontWeight: 700, color: t.primary, letterSpacing: 0.3 }}>
+                  BEGIN →
+                </span>
+              </div>
+            </Card>
+          </div>
+        ) : (
+          <Card style={{ padding: '16px 20px', marginBottom: 14, border: `1px solid ${t.sLine}` }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={t.success} strokeWidth="2.5">
+                <polyline points="20 6 9 17 4 12"/>
+              </svg>
+              <p style={{ fontFamily: ff.sans, fontSize: 15, fontWeight: 600, color: t.success }}>
+                All lessons completed!
+              </p>
+            </div>
+          </Card>
+        )}
+
+        {/* daily review */}
+        <div style={{ marginBottom: 14 }}>
+          <p style={{ fontFamily: ff.sans, fontSize: 11, fontWeight: 600, color: t.muted, letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 8 }}>
+            Spaced Repetition
+          </p>
+          <Card style={{ padding: '14px 16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{
+                width: 44, height: 44, borderRadius: 12,
+                background: t.aDim, border: `1px solid ${t.aLine}`,
+                display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+              }}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={t.amber} strokeWidth="2" strokeLinecap="round">
+                  <rect x="2" y="4" width="20" height="16" rx="2"/>
+                  <line x1="8" y1="2" x2="8" y2="6"/><line x1="16" y1="2" x2="16" y2="6"/>
+                  <path d="M7 12h5M7 16h8"/>
+                </svg>
+              </div>
+              <div style={{ flex: 1 }}>
+                <p style={{ fontFamily: ff.sans, fontSize: 15, fontWeight: 600, color: t.txt, marginBottom: 2 }}>
+                  {dueCards} Cards Due
+                </p>
+                <p style={{ fontFamily: ff.sans, fontSize: 12, color: t.muted }}>Memory decay detected</p>
+              </div>
+              <Btn v="primary" onClick={onArena}
+                style={{ flexShrink: 0, padding: '8px 14px', fontSize: 11, letterSpacing: 0.8 }}>
+                ENTER ARENA
+              </Btn>
+            </div>
+          </Card>
+        </div>
+
+        {/* stats */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
+          <Card style={{ padding: '16px' }}>
+            <p style={{ fontFamily: ff.mono, fontSize: 10, color: t.muted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>
+              Level
+            </p>
+            <p style={{ fontFamily: ff.serif, fontSize: 34, fontWeight: 700, color: t.txt, lineHeight: 1, marginBottom: 8 }}>
+              {level}
+            </p>
+            <Bar pct={(xpInLevel / 200) * 100} color={t.success} h={3}/>
+          </Card>
+          <Card style={{ padding: '16px' }}>
+            <p style={{ fontFamily: ff.mono, fontSize: 10, color: t.muted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>
+              XP Earned
+            </p>
+            <p style={{ fontFamily: ff.serif, fontSize: 34, fontWeight: 700, color: t.txt, lineHeight: 1, marginBottom: 8 }}>
+              {progress.xp >= 1000 ? `${(progress.xp / 1000).toFixed(1)}k` : progress.xp}
+            </p>
+            <p style={{ fontFamily: ff.mono, fontSize: 11, color: t.primary }}>
+              {done}/{total} lessons
+            </p>
+          </Card>
+        </div>
+
+        {/* completed recently */}
+        {done > 0 && (
+          <div>
+            <p style={{ fontFamily: ff.sans, fontSize: 11, fontWeight: 600, color: t.muted, letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 8 }}>
+              Completed Recently
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {curriculum.modules.flatMap(m => m.lessons.filter(l => progress.completed[l.id]).map(l => ({ ...l, mod: m.title }))).slice(-3).reverse().map(l => (
+                <Card key={l.id} style={{ padding: '12px 16px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div style={{ width: 28, height: 28, borderRadius: '50%', background: t.sDim, border: `1px solid ${t.sLine}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={t.success} strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
+                    </div>
+                    <div>
+                      <p style={{ fontFamily: ff.sans, fontSize: 13, fontWeight: 500, color: t.txt }}>{l.title}</p>
+                      <p style={{ fontFamily: ff.mono, fontSize: 10, color: t.muted }}>{l.mod}</p>
+                    </div>
+                  </div>
+                </Card>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ─── SKILL TREE ─── */
+function SkillTreeView({ curriculum, progress, onLesson, onTab }) {
+  const { t, dark } = useT();
+  const [sheet, setSheet] = useState(null); // { mod, lesson, done, active }
+
+  if (!curriculum) {
+    return <Empty msg="No curriculum yet." action="Generate one" onAction={() => onTab('gen')}/>;
+  }
+
+  const flat = curriculum.modules.flatMap(m =>
+    m.lessons.map(l => ({ ...l, modObj: m, modTitle: m.title }))
+  );
+
+  const isActive = (i) => !progress.completed[flat[i].id] && flat.slice(0, i).every(n => progress.completed[n.id]);
+
+  return (
+    <div style={{ paddingBottom: 100, overflowY: 'auto', height: '100vh' }}>
+      <div style={{ padding: '16px 20px 20px' }}>
+        <p style={{ fontFamily: ff.mono, fontSize: 10, color: t.muted, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 6 }}>
+          Neural Pathway
+        </p>
+        <h1 style={{ fontFamily: ff.serif, fontSize: 26, fontWeight: 700, color: t.txt, letterSpacing: '-0.5px', marginBottom: 4 }}>
+          {curriculum.title}
+        </h1>
+        <p style={{ fontFamily: ff.sans, fontSize: 13, color: t.muted }}>{curriculum.description}</p>
+      </div>
+
+      <div style={{ position: 'relative', padding: '0 20px' }}>
+        {/* center line */}
+        <div style={{
+          position: 'absolute', left: '50%', top: 0, bottom: 0, width: 3,
+          background: dark
+            ? `linear-gradient(to bottom, ${t.success}88, ${t.primary}55, ${t.line})`
+            : `linear-gradient(to bottom, ${t.success}55, ${t.primary}33, ${t.line})`,
+          transform: 'translateX(-50%)',
+          borderRadius: 2, zIndex: 0,
+        }}/>
+
+        {flat.map((node, i) => {
+          const done = !!progress.completed[node.id];
+          const active = isActive(i);
+          const locked = !done && !active;
+          const isLeft = i % 2 === 0;
+          const nodeColor = done ? t.success : active ? t.primary : t.faint;
+
           return (
-            <motion.div key={mod.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.06 }}>
-              <ModuleCard mod={mod} accentSet={ac} completedCount={mc} onSelectLesson={onSelectLesson}/>
+            <motion.div key={node.id}
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: i * 0.05 }}
+              style={{
+                position: 'relative', zIndex: 1,
+                display: 'grid', gridTemplateColumns: '1fr 60px 1fr',
+                alignItems: 'center', padding: '18px 0',
+              }}
+            >
+              {/* left label */}
+              <div style={{ textAlign: 'right', paddingRight: 14, opacity: locked ? 0.4 : 1 }}>
+                {isLeft && (
+                  <div>
+                    <p style={{ fontFamily: ff.mono, fontSize: 9, color: nodeColor, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 3 }}>
+                      {node.modTitle}
+                    </p>
+                    <p style={{ fontFamily: ff.serif, fontSize: 16, fontWeight: 600, color: t.txt, lineHeight: 1.3 }}>
+                      {node.title}
+                    </p>
+                    {done && <p style={{ fontFamily: ff.mono, fontSize: 9, color: t.success, marginTop: 3 }}>MASTERED</p>}
+                    {active && <p style={{ fontFamily: ff.mono, fontSize: 9, color: t.primary, marginTop: 3 }}>UP NEXT →</p>}
+                  </div>
+                )}
+              </div>
+
+              {/* node */}
+              <motion.button
+                whileTap={!locked ? { scale: 0.88 } : {}}
+                onClick={!locked ? () => setSheet({ node, done, active }) : null}
+                style={{
+                  width: active ? 52 : 44, height: active ? 52 : 44,
+                  borderRadius: '50%',
+                  background: done ? t.success : active ? t.primary : t.surface,
+                  border: `2.5px solid ${nodeColor}`,
+                  boxShadow: dark ? t.glow(nodeColor) : 'none',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  margin: '0 auto',
+                  cursor: locked ? 'default' : 'pointer',
+                  transition: 'all 0.2s',
+                }}
+              >
+                {done && (
+                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#000" strokeWidth="3">
+                    <polyline points="20 6 9 17 4 12"/>
+                  </svg>
+                )}
+                {active && (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="#000">
+                    <polygon points="5,3 19,12 5,21"/>
+                  </svg>
+                )}
+                {locked && (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={t.muted} strokeWidth="2">
+                    <rect x="3" y="11" width="18" height="11" rx="2"/>
+                    <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                  </svg>
+                )}
+              </motion.button>
+
+              {/* right label */}
+              <div style={{ textAlign: 'left', paddingLeft: 14, opacity: locked ? 0.4 : 1 }}>
+                {!isLeft && (
+                  <div>
+                    <p style={{ fontFamily: ff.mono, fontSize: 9, color: nodeColor, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 3 }}>
+                      {node.modTitle}
+                    </p>
+                    <p style={{ fontFamily: ff.serif, fontSize: 16, fontWeight: 600, color: t.txt, lineHeight: 1.3 }}>
+                      {node.title}
+                    </p>
+                    {done && <p style={{ fontFamily: ff.mono, fontSize: 9, color: t.success, marginTop: 3 }}>MASTERED</p>}
+                    {active && <p style={{ fontFamily: ff.mono, fontSize: 9, color: t.primary, marginTop: 3 }}>UP NEXT →</p>}
+                  </div>
+                )}
+              </div>
             </motion.div>
           );
         })}
       </div>
-    </motion.div>
-  );
-}
 
-/* ── PROGRESS ── */
-function ProgressView({ curriculum, progress }) {
-  const total = curriculum ? curriculum.modules.reduce((a, m) => a + m.lessons.length, 0) : 0;
-  const done = Object.keys(progress.completed).length;
-  const pct = total > 0 ? Math.round((done / total) * 100) : 0;
-  const level = Math.floor(progress.xp / 200) + 1;
-  return (
-    <motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.32 }}
-      style={{ padding: '36px 32px 60px', maxWidth: 680, width: '100%' }}>
-      <p style={{ fontFamily: ff.mono, fontSize: 10, fontWeight: 600, letterSpacing: 1.5,
-        color: T.green, textTransform: 'uppercase', marginBottom: 7 }}>Progress</p>
-      <h1 style={{ fontFamily: ff.serif, fontSize: 34, fontWeight: 700, color: T.txt,
-        letterSpacing: '-1px', marginBottom: 24 }}>Your Stats</h1>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 10, marginBottom: 20 }}>
-        {[
-          { label: 'Level', value: level, icon: '🏅' },
-          { label: 'Total XP', value: progress.xp, icon: '⚡' },
-          { label: 'Completed', value: done, icon: '✅' },
-          { label: 'XP to Next', value: 200 - (progress.xp % 200), icon: '🎯' },
-        ].map(s => (
-          <Card key={s.label} style={{ padding: '14px 16px' }}>
-            <div style={{ fontSize: 20, marginBottom: 5 }}>{s.icon}</div>
-            <div style={{ fontFamily: ff.mono, fontSize: 22, fontWeight: 600, color: T.txt, marginBottom: 1 }}>{s.value}</div>
-            <div style={{ fontFamily: ff.sans, fontSize: 11.5, color: T.muted }}>{s.label}</div>
-          </Card>
-        ))}
-      </div>
-      <Card style={{ padding: '16px 18px', marginBottom: 12 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 9 }}>
-          <span style={{ fontFamily: ff.sans, fontSize: 13, fontWeight: 600, color: T.txt }}>Level {level} → {level + 1}</span>
-          <span style={{ fontFamily: ff.mono, fontSize: 11, color: T.muted }}>{progress.xp % 200}/200 XP</span>
-        </div>
-        <ProgressBar pct={(progress.xp % 200) / 200 * 100} color={T.amber} height={6}/>
-      </Card>
-      {curriculum && (
-        <>
-          <Card style={{ padding: '16px 18px', marginBottom: 12 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 9 }}>
-              <span style={{ fontFamily: ff.sans, fontSize: 13, fontWeight: 600, color: T.txt }}>Course Completion</span>
-              <Badge>{pct}%</Badge>
-            </div>
-            <ProgressBar pct={pct} height={6}/>
-            <p style={{ fontFamily: ff.mono, fontSize: 11, color: T.dim, marginTop: 7 }}>{done} of {total} lessons</p>
-          </Card>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-            {curriculum.modules.map((mod, i) => {
-              const ac = ACCENTS[i % ACCENTS.length];
-              const mc = mod.lessons.filter(l => progress.completed[l.id]).length;
-              const mp = mod.lessons.length > 0 ? Math.round((mc / mod.lessons.length) * 100) : 0;
-              return (
-                <Card key={mod.id} style={{ padding: '11px 15px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <span style={{ fontSize: 17, flexShrink: 0 }}>{mod.icon}</span>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                        <span style={{ fontFamily: ff.sans, fontSize: 13, fontWeight: 500, color: T.txt,
-                          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{mod.title}</span>
-                        <span style={{ fontFamily: ff.mono, fontSize: 10.5, color: T.dim, flexShrink: 0, marginLeft: 8 }}>{mc}/{mod.lessons.length}</span>
-                      </div>
-                      <ProgressBar pct={mp} color={ac.color} height={3}/>
-                    </div>
+      {/* bottom sheet */}
+      <AnimatePresence>
+        {sheet && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              onClick={() => setSheet(null)}
+              style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 300 }}
+            />
+            <motion.div
+              initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
+              transition={{ type: 'spring', damping: 28, stiffness: 280 }}
+              style={{
+                position: 'fixed', bottom: 0,
+                left: '50%', transform: 'translateX(-50%)',
+                width: 'min(100%, 430px)',
+                background: t.surface,
+                borderRadius: '20px 20px 0 0',
+                padding: '12px 24px 48px',
+                zIndex: 301,
+              }}
+            >
+              <div style={{ width: 36, height: 4, background: t.lineMd, borderRadius: 2, margin: '0 auto 20px' }}/>
+              <Tag label={`Module ${flat.findIndex(n => n.id === sheet.node.id) + 1}`} style={{ marginBottom: 14 }}/>
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 8 }}>
+                <h2 style={{ fontFamily: ff.serif, fontSize: 26, fontWeight: 700, color: t.txt, letterSpacing: '-0.4px', lineHeight: 1.2, flex: 1, marginRight: 12 }}>
+                  {sheet.node.title}
+                </h2>
+                {sheet.active && (
+                  <div style={{ width: 40, height: 40, borderRadius: 10, background: t.pDim, border: `1px solid ${t.pLine}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={t.primary} strokeWidth="2">
+                      <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z"/>
+                    </svg>
                   </div>
-                </Card>
-              );
-            })}
-          </div>
-        </>
-      )}
-    </motion.div>
+                )}
+              </div>
+              <p style={{ fontFamily: ff.sans, fontSize: 14, color: t.muted, lineHeight: 1.65, marginBottom: 20 }}>
+                {sheet.node.modObj.description}
+              </p>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 20 }}>
+                <div style={{ background: t.bg, border: `1px solid ${t.line}`, borderRadius: 12, padding: '12px 14px' }}>
+                  <p style={{ fontFamily: ff.mono, fontSize: 9, color: t.muted, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 5 }}>Est. Time</p>
+                  <p style={{ fontFamily: ff.serif, fontSize: 22, fontWeight: 700, color: t.txt }}>{sheet.node.duration}</p>
+                </div>
+                <div style={{ background: t.bg, border: `1px solid ${t.line}`, borderRadius: 12, padding: '12px 14px' }}>
+                  <p style={{ fontFamily: ff.mono, fontSize: 9, color: t.muted, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 5 }}>Contains</p>
+                  <p style={{ fontFamily: ff.serif, fontSize: 22, fontWeight: 700, color: t.txt }}>6 Cards</p>
+                </div>
+              </div>
+              <Btn v="primary" full
+                onClick={() => { setSheet(null); onLesson(sheet.node.modObj, sheet.node); }}
+                style={{ height: 52, borderRadius: 999, letterSpacing: 1 }}>
+                {sheet.done ? 'REVIEW LESSON' : 'ENTER ARENA'} →
+              </Btn>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+    </div>
   );
 }
 
-/* ── LESSON ── */
-function LessonView({ lessonData, loading, moduleTitle, lessonId, progress, onQuiz, onFlashcards, onComplete }) {
+/* ─── LESSON ─── */
+function LessonView({ lessonData, loading, moduleTitle, lessonId, progress, onQuiz, onFlashcards, onComplete, onBack }) {
+  const { t, dark } = useT();
   const isDone = progress.completed[lessonId];
+  const scrollRef = useRef();
+  const [scrollPct, setScrollPct] = useState(0);
+
+  const onScroll = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    setScrollPct(Math.min((el.scrollTop / (el.scrollHeight - el.clientHeight)) * 100, 100));
+  };
+
   if (loading || !lessonData) {
     return (
-      <div style={{ padding: '36px 32px', maxWidth: 720, width: '100%' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 28 }}>
-          <motion.div animate={{ rotate: 360 }} transition={{ duration: 1.5, repeat: Infinity, ease: 'linear' }}
-            style={{ width: 18, height: 18, borderRadius: '50%', border: `2px solid ${T.border}`, borderTopColor: T.green }}/>
-          <span style={{ fontFamily: ff.sans, fontSize: 14, color: T.muted }}>Generating lesson…</span>
+      <div style={{ minHeight: '100vh', background: t.bg, padding: '56px 24px 40px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 32 }}>
+          <motion.div animate={{ rotate: 360 }} transition={{ duration: 1.4, repeat: Infinity, ease: 'linear' }}
+            style={{ width: 18, height: 18, borderRadius: '50%', border: `2px solid ${t.line}`, borderTopColor: t.primary }}/>
+          <span style={{ fontFamily: ff.sans, fontSize: 14, color: t.muted }}>Generating lesson…</span>
         </div>
-        {[1, 0.55, 0.8, 0.65, 0.9].map((w, i) => (
-          <motion.div key={i} animate={{ opacity: [0.3, 0.6, 0.3] }} transition={{ duration: 1.2, repeat: Infinity, delay: i * 0.12 }}
-            style={{ height: i === 0 ? 30 : 13, width: `${w*100}%`, background: T.borderMd, borderRadius: 5, marginBottom: i === 0 ? 22 : 9 }}/>
+        {[0.7, 0.45, 0.9, 0.6, 0.8].map((w, i) => (
+          <motion.div key={i}
+            animate={{ opacity: [0.2, 0.45, 0.2] }}
+            transition={{ duration: 1.4, repeat: Infinity, delay: i * 0.14 }}
+            style={{ height: i === 0 ? 28 : 13, width: `${w * 100}%`, background: t.surface, borderRadius: 6, marginBottom: i === 0 ? 22 : 10 }}
+          />
         ))}
       </div>
     );
   }
+
   return (
-    <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.32 }}
-      style={{ padding: '34px 32px 60px', width: '100%', maxWidth: 960 }}>
-      <div className="lesson-layout">
-        <div>
-          <p style={{ fontFamily: ff.mono, fontSize: 10, fontWeight: 600, color: T.dim,
-            textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 10 }}>{moduleTitle}</p>
-          <h1 style={{ fontFamily: ff.serif, fontSize: 'clamp(22px,3vw,34px)', fontWeight: 700,
-            color: T.txt, letterSpacing: '-0.8px', lineHeight: 1.15, marginBottom: 9 }}>{lessonData.title}</h1>
-          <p style={{ fontFamily: ff.sans, fontSize: 15, color: T.muted, lineHeight: 1.72,
-            marginBottom: 24, maxWidth: 560 }}>{lessonData.summary}</p>
+    <div style={{ minHeight: '100vh', background: t.bg, display: 'flex', flexDirection: 'column' }}>
+      {/* progress bar */}
+      <div style={{ position: 'sticky', top: 0, zIndex: 10, height: 3, background: t.line }}>
+        <motion.div animate={{ width: `${scrollPct}%` }} style={{ height: '100%', background: t.primary }}/>
+      </div>
 
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 24,
-            paddingBottom: 22, borderBottom: `1px solid ${T.border}` }}>
-            <Btn variant="outline" onClick={() => onQuiz(lessonData.quiz, lessonData.title)}>🎯 Quiz</Btn>
-            <Btn variant="outline" onClick={() => onFlashcards(lessonData.flashcards, lessonData.title)}>🃏 Flashcards</Btn>
-            {!isDone
-              ? <Btn variant="primary" onClick={() => onComplete(lessonId)}>
-                  ✓ Complete · <span style={{ fontFamily: ff.mono, fontSize: 12, opacity: 0.75 }}>+50 XP</span>
-                </Btn>
-              : <Badge color={T.greenTxt} bg={T.greenLt}>✓ Completed</Badge>
-            }
-          </div>
+      {/* sticky header */}
+      <div style={{
+        position: 'sticky', top: 3, zIndex: 10,
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: '13px 20px',
+        background: dark ? 'rgba(9,10,12,0.92)' : 'rgba(244,242,236,0.92)',
+        backdropFilter: 'blur(12px)',
+        borderBottom: `1px solid ${t.line}`,
+      }}>
+        <button onClick={onBack}
+          style={{ display: 'flex', alignItems: 'center', gap: 6, color: t.muted, fontFamily: ff.sans, fontSize: 13, fontWeight: 500 }}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+            <path d="M19 12H5M12 5l-7 7 7 7"/>
+          </svg>
+        </button>
+        <span style={{ fontFamily: ff.mono, fontSize: 10, color: t.muted, letterSpacing: 0.8, textTransform: 'uppercase' }}>
+          {moduleTitle}
+        </span>
+        <div style={{ width: 16 }}/>
+      </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {lessonData.sections?.map((s, i) => (
-              <motion.div key={i} initial={{ opacity: 0, y: 7 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.06 }}>
-                <Card style={{ padding: '18px 20px' }}>
-                  <h2 style={{ fontFamily: ff.sans, fontSize: 13.5, fontWeight: 700, color: T.txt,
-                    marginBottom: 7, display: 'flex', alignItems: 'center', gap: 7 }}>
-                    <span style={{ width: 3, height: 13, background: T.green, borderRadius: 2, flexShrink: 0 }}/>
-                    {s.heading}
-                  </h2>
-                  <p style={{ fontFamily: ff.sans, fontSize: 14, color: T.muted, lineHeight: 1.8 }}>{s.content}</p>
-                </Card>
-              </motion.div>
-            ))}
-          </div>
+      {/* content */}
+      <div ref={scrollRef} onScroll={onScroll}
+        style={{ flex: 1, overflowY: 'auto', padding: '28px 24px 24px' }}>
 
-          {lessonData.keyPoints?.length > 0 && (
-            <Card style={{ padding: '18px 20px', marginTop: 12, background: T.greenLt, border: `1px solid rgba(26,122,60,0.14)` }}>
-              <h3 style={{ fontFamily: ff.sans, fontSize: 11, fontWeight: 700, color: T.greenTxt,
-                textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 12 }}>Key Takeaways</h3>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-                {lessonData.keyPoints.map((pt, i) => (
-                  <div key={i} style={{ display: 'flex', gap: 9, alignItems: 'flex-start' }}>
-                    <span style={{ fontFamily: ff.mono, fontSize: 10, color: T.green, fontWeight: 600,
-                      background: T.white, padding: '2px 6px', borderRadius: 4, flexShrink: 0, marginTop: 2 }}>
-                      {String(i+1).padStart(2,'0')}
-                    </span>
-                    <p style={{ fontFamily: ff.sans, fontSize: 14, color: T.greenTxt, lineHeight: 1.65 }}>{pt}</p>
-                  </div>
-                ))}
-              </div>
-            </Card>
-          )}
+        <div style={{ marginBottom: 16 }}>
+          <Tag label="Lesson"/>
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 11 }}>
-          <Card style={{ padding: '15px 17px' }}>
-            <p style={{ fontFamily: ff.mono, fontSize: 9.5, fontWeight: 600, color: T.dim,
-              textTransform: 'uppercase', letterSpacing: 1, marginBottom: 11 }}>Lesson</p>
-            {[['Sections', lessonData.sections?.length||0], ['Key Points', lessonData.keyPoints?.length||0],
-              ['Quiz Qs', lessonData.quiz?.length||0], ['Flashcards', lessonData.flashcards?.length||0]].map(([k,v]) => (
-              <div key={k} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                padding: '5px 0', borderBottom: `1px solid ${T.border}` }}>
-                <span style={{ fontFamily: ff.sans, fontSize: 12.5, color: T.muted }}>{k}</span>
-                <span style={{ fontFamily: ff.mono, fontSize: 12.5, fontWeight: 500, color: T.txt }}>{v}</span>
+        <h1 style={{
+          fontFamily: ff.serif, fontSize: 'clamp(26px, 7vw, 34px)',
+          fontWeight: 700, color: t.txt,
+          letterSpacing: '-0.8px', lineHeight: 1.22, marginBottom: 12,
+        }}>
+          {lessonData.title}
+        </h1>
+        <p style={{ fontFamily: ff.sans, fontSize: 16, color: t.muted, lineHeight: 1.75, marginBottom: 28 }}>
+          {lessonData.summary}
+        </p>
+
+        {lessonData.sections?.map((s, i) => (
+          <div key={i} style={{ marginBottom: 26 }}>
+            <h2 style={{
+              fontFamily: ff.serif, fontSize: 22, fontWeight: 700,
+              color: t.txt, letterSpacing: '-0.3px', lineHeight: 1.3, marginBottom: 10,
+            }}>
+              {s.heading}
+            </h2>
+            <p style={{ fontFamily: ff.sans, fontSize: 16, color: dark ? 'rgba(241,243,245,0.82)' : t.muted, lineHeight: 1.82 }}>
+              {s.content}
+            </p>
+          </div>
+        ))}
+
+        {lessonData.keyPoints?.length > 0 && (
+          <div style={{
+            background: t.pDim,
+            border: `1px solid ${t.pLine}`,
+            borderLeft: `4px solid ${t.primary}`,
+            borderRadius: '0 12px 12px 0',
+            padding: '18px 20px', marginBottom: 28,
+          }}>
+            <p style={{ fontFamily: ff.mono, fontSize: 10, fontWeight: 600, color: t.primary, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 14 }}>
+              Key Takeaways
+            </p>
+            {lessonData.keyPoints.map((pt, i) => (
+              <div key={i} style={{ display: 'flex', gap: 10, marginBottom: i < lessonData.keyPoints.length - 1 ? 10 : 0 }}>
+                <span style={{ fontFamily: ff.mono, fontSize: 10, color: t.primary, fontWeight: 600, marginTop: 3, flexShrink: 0 }}>
+                  {String(i + 1).padStart(2, '0')}
+                </span>
+                <p style={{ fontFamily: ff.sans, fontSize: 15, color: t.txt, lineHeight: 1.65 }}>{pt}</p>
               </div>
             ))}
-            <div style={{ marginTop: 11, padding: '9px 11px', background: T.amberLt,
-              border: `1px solid rgba(201,122,16,0.16)`, borderRadius: 7,
-              display: 'flex', alignItems: 'center', gap: 7 }}>
-              <span style={{ fontSize: 15 }}>⚡</span>
-              <div>
-                <div style={{ fontFamily: ff.mono, fontSize: 13, fontWeight: 600, color: T.amber }}>+50–150 XP</div>
-                <div style={{ fontFamily: ff.sans, fontSize: 11, color: T.amber, opacity: 0.7 }}>complete + quiz</div>
-              </div>
-            </div>
-          </Card>
+          </div>
+        )}
 
-          {lessonData.resources?.length > 0 && (
-            <Card style={{ padding: '15px 17px' }}>
-              <p style={{ fontFamily: ff.mono, fontSize: 9.5, fontWeight: 600, color: T.dim,
-                textTransform: 'uppercase', letterSpacing: 1, marginBottom: 11 }}>Resources</p>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-                {lessonData.resources.map((r, i) => (
-                  <div key={i} style={{ display: 'flex', gap: 9, padding: '8px 9px',
-                    background: T.cream, borderRadius: 7, border: `1px solid ${T.border}` }}>
-                    <span style={{ fontSize: 17, flexShrink: 0 }}>{r.icon}</span>
-                    <div>
-                      <div style={{ fontFamily: ff.sans, fontSize: 12.5, fontWeight: 600, color: T.txt, marginBottom: 1 }}>{r.title}</div>
-                      <div style={{ fontFamily: ff.sans, fontSize: 11.5, color: T.muted, lineHeight: 1.4 }}>{r.description}</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </Card>
-          )}
+        <div style={{ display: 'flex', gap: 9, flexWrap: 'wrap', marginBottom: 8 }}>
+          <Btn v="outline" onClick={() => onQuiz(lessonData.quiz, lessonData.title)}>Quiz me</Btn>
+          <Btn v="ghost" onClick={() => onFlashcards(lessonData.flashcards, lessonData.title)}>Flashcards</Btn>
         </div>
       </div>
-    </motion.div>
+
+      {/* sticky CTA */}
+      <div style={{
+        position: 'sticky', bottom: 0, padding: '12px 24px 28px',
+        background: dark ? 'rgba(9,10,12,0.95)' : 'rgba(244,242,236,0.95)',
+        backdropFilter: 'blur(12px)',
+        borderTop: `1px solid ${t.line}`,
+      }}>
+        {!isDone ? (
+          <Btn v="primary" full onClick={() => onComplete(lessonId)}
+            style={{ height: 52, borderRadius: 999, letterSpacing: 1, boxShadow: dark ? t.glow(t.primary) : 'none' }}>
+            COMPLETE LESSON →
+          </Btn>
+        ) : (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '14px 0' }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={t.success} strokeWidth="2.5">
+              <polyline points="20 6 9 17 4 12"/>
+            </svg>
+            <span style={{ fontFamily: ff.sans, fontSize: 14, fontWeight: 600, color: t.success }}>Lesson completed</span>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
-/* ── QUIZ ── */
+/* ─── QUIZ ─── */
 function QuizView({ quiz, lessonTitle, onComplete, onBack }) {
+  const { t } = useT();
   const [cur, setCur] = useState(0);
   const [chosen, setChosen] = useState(null);
   const [revealed, setRevealed] = useState(false);
   const [tally, setTally] = useState([]);
+  const [score, setScore] = useState(0);
   const [done, setDone] = useState(false);
+
   const q = quiz[cur];
-  const pick = i => { if (!revealed) { setChosen(i); setRevealed(true); } };
-  const next = () => {
-    const ok = chosen === q.correct;
-    const t = [...tally, ok];
-    setTally(t);
-    if (cur+1 >= quiz.length) { setDone(true); onComplete(t.filter(Boolean).length, quiz.length); }
-    else { setCur(c => c+1); setChosen(null); setRevealed(false); }
+
+  const pick = (i) => {
+    if (revealed) return;
+    setChosen(i);
+    setRevealed(true);
   };
+
+  const next = () => {
+    const correct = chosen === q.correct;
+    const nTally = [...tally, correct];
+    const nScore = score + (correct ? 1 : 0);
+    setTally(nTally); setScore(nScore);
+    if (cur + 1 >= quiz.length) { onComplete(nScore, quiz.length); setDone(true); }
+    else { setCur(c => c + 1); setChosen(null); setRevealed(false); }
+  };
+
   if (done) {
-    const score = tally.filter(Boolean).length;
-    const pct = Math.round((score/quiz.length)*100);
+    const pct = Math.round((score / quiz.length) * 100);
+    const color = pct >= 80 ? t.success : pct >= 60 ? t.amber : t.danger;
     return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '80vh', padding: '32px 24px' }}>
-        <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
-          style={{ width: '100%', maxWidth: 400, textAlign: 'center' }}>
-          <motion.div animate={{ scale: [0, 1.1, 1] }} transition={{ duration: 0.42 }}
-            style={{ fontSize: 60, marginBottom: 18 }}>{pct>=80?'🏆':pct>=60?'🎯':'📚'}</motion.div>
-          <h2 style={{ fontFamily: ff.serif, fontSize: 32, fontWeight: 700, color: T.txt, letterSpacing: '-0.8px', marginBottom: 5 }}>
-            {pct>=80?'Excellent!':pct>=60?'Good job!':'Keep at it!'}
+      <div style={{ minHeight: '100vh', background: t.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 28 }}>
+        <motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }}
+          style={{ width: '100%', maxWidth: 360, textAlign: 'center' }}>
+          <div style={{ fontFamily: ff.mono, fontSize: 58, fontWeight: 700, color, marginBottom: 12 }}>{pct}%</div>
+          <h2 style={{ fontFamily: ff.serif, fontSize: 28, fontWeight: 700, color: t.txt, marginBottom: 6 }}>
+            {pct >= 80 ? 'Excellent!' : pct >= 60 ? 'Good work.' : 'Keep grinding.'}
           </h2>
-          <p style={{ fontFamily: ff.sans, color: T.muted, fontSize: 14, marginBottom: 22 }}>
-            {score}/{quiz.length} correct on <strong style={{ color: T.txt }}>{lessonTitle}</strong>
+          <p style={{ fontFamily: ff.sans, fontSize: 14, color: t.muted, marginBottom: 24 }}>
+            {score}/{quiz.length} correct · +{score * 20} XP
           </p>
-          <Card style={{ padding: '24px', marginBottom: 18 }}>
-            <div style={{ fontFamily: ff.mono, fontSize: 52, fontWeight: 700,
-              color: pct>=80?T.green:pct>=60?T.amber:T.blue, marginBottom: 14 }}>{pct}%</div>
-            <ProgressBar pct={pct} color={pct>=80?T.green:pct>=60?T.amberMd:T.blue} height={6}/>
-            <p style={{ fontFamily: ff.mono, fontSize: 11.5, color: T.muted, marginTop: 9 }}>+{score*20} XP earned</p>
-          </Card>
-          <Btn variant="outline" onClick={onBack} style={{ margin: '0 auto' }}>← Back to Lesson</Btn>
+          <Bar pct={pct} color={color} h={5}/>
+          <div style={{ height: 24 }}/>
+          <Btn v="outline" onClick={onBack} style={{ margin: '0 auto' }}>Back to Lesson</Btn>
         </motion.div>
       </div>
     );
   }
+
   return (
-    <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
-      style={{ padding: '36px 32px', maxWidth: 600, width: '100%' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 5 }}>
-        <Tag label="Quiz" color={T.blue} bg={T.blueLt}/>
-        <div style={{ display: 'flex', gap: 3 }}>
-          {quiz.map((_,i) => (
-            <div key={i} style={{ width: 26, height: 3.5, borderRadius: 2,
-              background: i<tally.length?(tally[i]?T.green:T.red):i===cur?T.blue:T.border,
-              transition: 'background 0.2s' }}/>
+    <div style={{ minHeight: '100vh', background: t.bg, display: 'flex', flexDirection: 'column' }}>
+      <div style={{ padding: '16px 20px 14px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+          <button onClick={onBack} style={{ fontFamily: ff.sans, fontSize: 13, color: t.muted }}>← Back</button>
+          <Tag label="Quiz"/>
+        </div>
+        <div style={{ display: 'flex', gap: 4 }}>
+          {quiz.map((_, i) => (
+            <div key={i} style={{
+              flex: 1, height: 4, borderRadius: 2, transition: 'background 0.2s',
+              background: i < tally.length ? (tally[i] ? t.success : t.danger)
+                        : i === cur ? t.pLine : t.line,
+            }}/>
           ))}
         </div>
       </div>
-      <p style={{ fontFamily: ff.sans, fontSize: 12, color: T.muted, marginBottom: 26 }}>
-        Question {cur+1} of {quiz.length} — {lessonTitle}
-      </p>
-      <AnimatePresence mode="wait">
-        <motion.div key={cur} initial={{ opacity: 0, x: 16 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -16 }}
-          transition={{ duration: 0.2 }}>
-          <Card style={{ padding: '20px 22px', marginBottom: 12 }}>
-            <h2 style={{ fontFamily: ff.serif, fontSize: 19, fontWeight: 600, color: T.txt, lineHeight: 1.52 }}>{q.question}</h2>
-          </Card>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 7, marginBottom: 12 }}>
-            {q.options.map((opt, i) => {
-              const isRight = i===q.correct, isSel = i===chosen;
-              let bg=T.white, bc=T.border, clr=T.txt;
-              if (revealed) {
-                if (isRight) { bg=T.greenLt; bc='rgba(26,122,60,0.28)'; clr=T.greenTxt; }
-                else if (isSel) { bg=T.redLt; bc='rgba(220,38,38,0.28)'; clr=T.red; }
-              }
-              return (
-                <motion.button key={i} whileHover={!revealed?{x:2}:{}} onClick={() => pick(i)}
-                  style={{ background: bg, border: `1px solid ${bc}`, borderRadius: 9,
-                    padding: '11px 15px', textAlign: 'left', display: 'flex', alignItems: 'center',
-                    gap: 11, fontFamily: ff.sans, fontSize: 14, color: clr,
-                    cursor: revealed?'default':'pointer', transition: 'all 0.13s',
-                    fontWeight: (isSel||(revealed&&isRight))?600:400,
-                    boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
-                  <span style={{ fontFamily: ff.mono, fontSize: 10.5, color: revealed&&isRight?T.green:T.dim,
-                    width: 18, flexShrink: 0, fontWeight: 600 }}>{String.fromCharCode(65+i)}</span>
-                  <span style={{ flex: 1 }}>{opt}</span>
-                  {revealed && isRight && <span style={{ color: T.green }}>✓</span>}
-                  {revealed && isSel && !isRight && <span style={{ color: T.red }}>✗</span>}
-                </motion.button>
-              );
-            })}
-          </div>
-          <AnimatePresence>
-            {revealed && q.explanation && (
-              <motion.div initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }}
-                style={{ background: T.blueLt, border: `1px solid rgba(29,78,216,0.14)`,
-                  borderRadius: 9, padding: '11px 15px', marginBottom: 12 }}>
-                <p style={{ fontFamily: ff.sans, fontSize: 13, color: T.blueTxt, lineHeight: 1.65 }}>💡 {q.explanation}</p>
-              </motion.div>
-            )}
-          </AnimatePresence>
-          {revealed && (
-            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-              <Btn variant="primary" onClick={next}>{cur+1>=quiz.length?'See Results':'Next'} →</Btn>
+
+      <div style={{ flex: 1, padding: '8px 20px 28px', overflowY: 'auto' }}>
+        <p style={{ fontFamily: ff.sans, fontSize: 12, color: t.muted, marginBottom: 14 }}>
+          Question {cur + 1} of {quiz.length}
+        </p>
+        <AnimatePresence mode="wait">
+          <motion.div key={cur} initial={{ opacity: 0, x: 14 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -14 }} transition={{ duration: 0.18 }}>
+            <Card style={{ padding: '20px', marginBottom: 12 }}>
+              <h2 style={{ fontFamily: ff.serif, fontSize: 20, fontWeight: 600, color: t.txt, lineHeight: 1.52 }}>
+                {q.question}
+              </h2>
+            </Card>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
+              {q.options.map((opt, i) => {
+                const isRight = i === q.correct, isSel = i === chosen;
+                let bg = t.surface, border = t.line, clr = t.txt;
+                if (revealed) {
+                  if (isRight) { bg = t.sDim; border = t.sLine; clr = t.success; }
+                  else if (isSel) { bg = t.rDim; border = t.rLine; clr = t.danger; }
+                }
+                return (
+                  <motion.button key={i} whileHover={!revealed ? { x: 3 } : {}} onClick={() => pick(i)}
+                    style={{
+                      background: bg, border: `1px solid ${border}`, borderRadius: 12,
+                      padding: '12px 16px', textAlign: 'left',
+                      display: 'flex', alignItems: 'center', gap: 12,
+                      fontFamily: ff.sans, fontSize: 15, color: clr,
+                      fontWeight: isSel || (revealed && isRight) ? 600 : 400,
+                      cursor: revealed ? 'default' : 'pointer', transition: 'all 0.13s',
+                    }}>
+                    <span style={{ fontFamily: ff.mono, fontSize: 10, color: revealed && isRight ? t.success : t.muted, fontWeight: 600, width: 18, flexShrink: 0 }}>
+                      {String.fromCharCode(65 + i)}
+                    </span>
+                    <span style={{ flex: 1 }}>{opt}</span>
+                    {revealed && isRight && <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={t.success} strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>}
+                    {revealed && isSel && !isRight && <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={t.danger} strokeWidth="3"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>}
+                  </motion.button>
+                );
+              })}
             </div>
-          )}
-        </motion.div>
-      </AnimatePresence>
-    </motion.div>
+            <AnimatePresence>
+              {revealed && q.explanation && (
+                <motion.div initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }}
+                  style={{ background: t.pDim, border: `1px solid ${t.pLine}`, borderRadius: 12, padding: '12px 16px', marginBottom: 12 }}>
+                  <p style={{ fontFamily: ff.sans, fontSize: 13, color: t.txt, lineHeight: 1.65 }}>{q.explanation}</p>
+                </motion.div>
+              )}
+            </AnimatePresence>
+            {revealed && (
+              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                <Btn v="primary" onClick={next}>{cur + 1 >= quiz.length ? 'Finish' : 'Next →'}</Btn>
+              </div>
+            )}
+          </motion.div>
+        </AnimatePresence>
+      </div>
+    </div>
   );
 }
 
-/* ── FLASHCARDS ── */
-function FlashcardsView({ cards, lessonTitle, onBack }) {
+/* ─── ARENA (FLASHCARDS) ─── */
+function ArenaView({ cards, lessonTitle, onBack }) {
+  const { t, dark } = useT();
   const [idx, setIdx] = useState(0);
   const [flipped, setFlipped] = useState(false);
-  const [known, setKnown] = useState(new Set());
+  const [ratings, setRatings] = useState({});
   const [done, setDone] = useState(false);
+
   const card = cards[idx];
-  const respond = ok => {
-    if (ok) setKnown(k => new Set([...k, idx]));
-    if (idx+1 >= cards.length) setDone(true);
-    else { setIdx(i=>i+1); setFlipped(false); }
+
+  const rate = (r) => {
+    const next = { ...ratings, [idx]: r };
+    setRatings(next);
+    if (idx + 1 >= cards.length) setDone(true);
+    else { setIdx(i => i + 1); setFlipped(false); }
   };
+
   if (done) {
-    const pct = Math.round((known.size/cards.length)*100);
+    const easy = Object.values(ratings).filter(r => r === 'easy').length;
+    const good = Object.values(ratings).filter(r => r === 'good').length;
+    const hard = Object.values(ratings).filter(r => r === 'hard').length;
+    const pct = Math.round(((easy + good) / cards.length) * 100);
+
     return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '80vh', padding: '32px 24px' }}>
-        <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
-          style={{ width: '100%', maxWidth: 380, textAlign: 'center' }}>
-          <div style={{ fontSize: 52, marginBottom: 18 }}>🃏</div>
-          <h2 style={{ fontFamily: ff.serif, fontSize: 30, fontWeight: 700, color: T.txt, letterSpacing: '-0.5px', marginBottom: 7 }}>Review done!</h2>
-          <p style={{ fontFamily: ff.sans, color: T.muted, fontSize: 14, marginBottom: 22 }}>
-            Knew {known.size} of {cards.length} cards
+      <div style={{ minHeight: '100vh', background: t.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 28 }}>
+        <motion.div initial={{ opacity: 0, scale: 0.94 }} animate={{ opacity: 1, scale: 1 }}
+          style={{ width: '100%', maxWidth: 360, textAlign: 'center' }}>
+          <div style={{
+            width: 68, height: 68, borderRadius: '50%',
+            background: t.sDim, border: `2px solid ${t.sLine}`,
+            boxShadow: dark ? t.glow(t.success) : 'none',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px',
+          }}>
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke={t.success} strokeWidth="2.5">
+              <polyline points="20 6 9 17 4 12"/>
+            </svg>
+          </div>
+          <h2 style={{ fontFamily: ff.serif, fontSize: 30, fontWeight: 700, color: t.txt, letterSpacing: '-0.5px', marginBottom: 6 }}>
+            Arena Cleared
+          </h2>
+          <p style={{ fontFamily: ff.sans, fontSize: 14, color: t.muted, marginBottom: 24 }}>
+            {pct >= 80 ? 'Excellent retention.' : 'Keep grinding.'}
           </p>
-          <Card style={{ padding: '22px', marginBottom: 18 }}>
-            <div style={{ fontFamily: ff.mono, fontSize: 46, fontWeight: 700,
-              color: pct>=80?T.green:T.amber, marginBottom: 12 }}>{known.size}/{cards.length}</div>
-            <ProgressBar pct={pct} color={pct>=80?T.green:T.amberMd} height={6}/>
+          <Card style={{ padding: '22px 24px', marginBottom: 20 }}>
+            <div style={{ fontFamily: ff.mono, fontSize: 50, fontWeight: 700, color: pct >= 80 ? t.success : t.primary, marginBottom: 14 }}>
+              {pct}%
+            </div>
+            <Bar pct={pct} color={pct >= 80 ? t.success : t.primary} h={5}/>
+            <div style={{ display: 'flex', justifyContent: 'space-around', marginTop: 18 }}>
+              {[['Easy', easy, t.success], ['Good', good, t.primary], ['Hard', hard, t.danger]].map(([label, count, color]) => (
+                <div key={label} style={{ textAlign: 'center' }}>
+                  <div style={{ fontFamily: ff.mono, fontSize: 22, fontWeight: 700, color, marginBottom: 3 }}>{count}</div>
+                  <div style={{ fontFamily: ff.sans, fontSize: 11, color: t.muted }}>{label}</div>
+                </div>
+              ))}
+            </div>
           </Card>
-          <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
-            <Btn variant="outline" onClick={() => { setIdx(0); setFlipped(false); setKnown(new Set()); setDone(false); }}>🔄 Retry</Btn>
-            <Btn variant="ghost" onClick={onBack}>← Back</Btn>
+          <div style={{ display: 'flex', gap: 9, justifyContent: 'center' }}>
+            <Btn v="outline" onClick={() => { setIdx(0); setFlipped(false); setRatings({}); setDone(false); }}>Retry</Btn>
+            <Btn v="ghost" onClick={onBack}>Back</Btn>
           </div>
         </motion.div>
       </div>
     );
   }
+
   return (
-    <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
-      style={{ padding: '36px 32px', maxWidth: 520, width: '100%' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-        <Tag label="Flashcards" color={T.blue} bg={T.blueLt}/>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <span style={{ fontFamily: ff.mono, fontSize: 11.5, color: T.muted }}>{idx+1}/{cards.length}</span>
-          <Badge>✓ {known.size}</Badge>
+    <div style={{ minHeight: '100vh', background: t.bg, display: 'flex', flexDirection: 'column' }}>
+      {/* header */}
+      <div style={{ padding: '14px 20px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10 }}>
+          <button onClick={onBack} style={{
+            width: 36, height: 36, borderRadius: '50%',
+            background: t.surface, border: `1px solid ${t.line}`,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', color: t.muted,
+          }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+          <div style={{ flex: 1 }}>
+            <p style={{ fontFamily: ff.mono, fontSize: 10, color: t.muted, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 5 }}>
+              {lessonTitle}
+            </p>
+            <div style={{ display: 'flex', gap: 4 }}>
+              {cards.map((_, i) => (
+                <div key={i} style={{
+                  flex: 1, height: 4, borderRadius: 2, transition: 'background 0.2s',
+                  background: ratings[i] === 'easy' ? t.success
+                            : ratings[i] === 'good' ? t.primary
+                            : ratings[i] === 'hard' ? t.danger
+                            : i === idx ? t.pLine : t.line,
+                }}/>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
-      <p style={{ fontFamily: ff.sans, fontSize: 12, color: T.muted, marginBottom: 18 }}>{lessonTitle}</p>
-      <div style={{ height: 3, background: T.border, borderRadius: 2, marginBottom: 22, overflow: 'hidden' }}>
-        <motion.div animate={{ width: `${(idx/cards.length)*100}%` }}
-          style={{ height: '100%', background: T.blue, borderRadius: 2 }}/>
+
+      {/* card */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '0 24px' }}>
+        <div onClick={() => setFlipped(f => !f)}
+          style={{ perspective: 1000, width: '100%', maxWidth: 360, cursor: 'pointer' }}>
+          <motion.div
+            animate={{ rotateY: flipped ? 180 : 0 }}
+            transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+            style={{ position: 'relative', transformStyle: 'preserve-3d', height: 240 }}>
+
+            {/* front */}
+            <div style={{
+              position: 'absolute', inset: 0,
+              backfaceVisibility: 'hidden', WebkitBackfaceVisibility: 'hidden',
+              background: t.surface,
+              border: `1px solid ${t.pLine}`,
+              boxShadow: dark ? t.glow(t.primary) : 'none',
+              borderRadius: 20,
+              display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+              padding: 28, textAlign: 'center',
+            }}>
+              <p style={{ fontFamily: ff.mono, fontSize: 9, fontWeight: 600, letterSpacing: 2, color: t.muted, textTransform: 'uppercase', marginBottom: 18 }}>
+                Question
+              </p>
+              <p style={{ fontFamily: ff.serif, fontSize: 22, fontWeight: 600, color: t.txt, lineHeight: 1.45 }}>
+                {card.front}
+              </p>
+              <p style={{ fontFamily: ff.sans, fontSize: 12, color: t.faint, marginTop: 20 }}>tap to flip</p>
+            </div>
+
+            {/* back */}
+            <div style={{
+              position: 'absolute', inset: 0,
+              backfaceVisibility: 'hidden', WebkitBackfaceVisibility: 'hidden',
+              transform: 'rotateY(180deg)',
+              background: t.surface,
+              border: `1px solid ${t.pLine}`,
+              boxShadow: dark ? t.glow(t.primary) : 'none',
+              borderRadius: 20,
+              display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+              padding: 28, textAlign: 'center',
+            }}>
+              <p style={{ fontFamily: ff.mono, fontSize: 9, fontWeight: 600, letterSpacing: 2, color: t.primary, textTransform: 'uppercase', marginBottom: 18 }}>
+                The Answer
+              </p>
+              <p style={{ fontFamily: ff.sans, fontSize: 16, color: t.txt, lineHeight: 1.72 }}>
+                {card.back}
+              </p>
+            </div>
+          </motion.div>
+        </div>
       </div>
-      <div onClick={() => setFlipped(f=>!f)} style={{ perspective: 1000, cursor: 'pointer', marginBottom: 18, userSelect: 'none' }}>
-        <motion.div animate={{ rotateY: flipped ? 180 : 0 }}
-          transition={{ duration: 0.36, ease: [0.22,1,0.36,1] }}
-          style={{ position: 'relative', transformStyle: 'preserve-3d', height: 220 }}>
-          <div style={{ position: 'absolute', inset: 0, backfaceVisibility: 'hidden', WebkitBackfaceVisibility: 'hidden',
-            background: T.white, border: `1px solid ${T.borderMd}`, borderRadius: 14,
-            boxShadow: '0 4px 18px rgba(0,0,0,0.07)',
-            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 28, textAlign: 'center' }}>
-            <p style={{ fontFamily: ff.mono, fontSize: 9, fontWeight: 600, letterSpacing: 2,
-              color: T.dim, textTransform: 'uppercase', marginBottom: 14 }}>Term</p>
-            <p style={{ fontFamily: ff.serif, fontSize: 21, fontWeight: 600, color: T.txt, lineHeight: 1.4 }}>{card.front}</p>
-            <p style={{ fontFamily: ff.sans, fontSize: 11.5, color: T.dim, marginTop: 18 }}>tap to reveal ↕</p>
-          </div>
-          <div style={{ position: 'absolute', inset: 0, backfaceVisibility: 'hidden', WebkitBackfaceVisibility: 'hidden',
-            transform: 'rotateY(180deg)', background: T.forest, borderRadius: 14,
-            boxShadow: '0 4px 18px rgba(0,0,0,0.14)',
-            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 28, textAlign: 'center' }}>
-            <p style={{ fontFamily: ff.mono, fontSize: 9, fontWeight: 600, letterSpacing: 2,
-              color: 'rgba(125,218,155,0.6)', textTransform: 'uppercase', marginBottom: 14 }}>Answer</p>
-            <p style={{ fontFamily: ff.sans, fontSize: 15.5, color: '#E8F5EC', lineHeight: 1.72 }}>{card.back}</p>
-          </div>
-        </motion.div>
-      </div>
+
+      {/* rating buttons */}
       <AnimatePresence>
-        {flipped && (
-          <motion.div initial={{ opacity: 0, y: 7 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
-            style={{ display: 'flex', gap: 9 }}>
-            <Btn variant="danger" onClick={() => respond(false)} full>✗ Still learning</Btn>
-            <Btn variant="success" onClick={() => respond(true)} full>✓ Got it!</Btn>
+        {flipped ? (
+          <motion.div key="btns"
+            initial={{ opacity: 0, y: 14 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            style={{ padding: '16px 24px 40px', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+            {[
+              { label: 'HARD', v: 'danger', r: 'hard' },
+              { label: 'GOOD', v: 'outline', r: 'good' },
+              { label: 'EASY', v: 'success', r: 'easy' },
+            ].map(btn => (
+              <Btn key={btn.r} v={btn.v} onClick={() => rate(btn.r)} full
+                style={{ height: 54, borderRadius: 14, letterSpacing: 0.8 }}>
+                {btn.label}
+              </Btn>
+            ))}
+          </motion.div>
+        ) : (
+          <motion.div key="hint" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            style={{ padding: '16px 24px 40px', textAlign: 'center' }}>
+            <p style={{ fontFamily: ff.sans, fontSize: 13, color: t.faint }}>Tap the card to reveal the answer</p>
           </motion.div>
         )}
       </AnimatePresence>
-      {!flipped && (
-        <p style={{ fontFamily: ff.sans, fontSize: 12, color: T.dim, textAlign: 'center' }}>
-          Flip the card, then mark whether you knew it
-        </p>
-      )}
-    </motion.div>
+    </div>
   );
 }
 
-/* ── ROOT ── */
+/* ─── ROOT ─── */
 export default function App() {
-  const [view, setView] = useState('home');
+  const [dark, setDark] = useState(true);
+  const t = dark ? DARK : LIGHT;
+  const ctx = { t, dark, toggle: () => setDark(d => !d) };
+
+  const [tab, setTab] = useState('gen');
+  const [subview, setSubview] = useState(null); // 'lesson' | 'quiz' | 'arena'
   const [skill, setSkill] = useState('');
   const [curriculum, setCurriculum] = useState(null);
-  const [activeModule, setActiveModule] = useState(null);
+  const [generating, setGenerating] = useState(false);
+  const [activeMod, setActiveMod] = useState(null);
   const [activeLesson, setActiveLesson] = useState(null);
   const [lessonData, setLessonData] = useState(null);
-  const [loadingLesson, setLoadingLesson] = useState(false);
-  const [quizPayload, setQuizPayload] = useState(null);
-  const [fcPayload, setFcPayload] = useState(null);
-  const [progress, setProgress] = useState({ xp: 0, completed: {} });
-  const [error, setError] = useState('');
+  const [lessonLoading, setLessonLoading] = useState(false);
+  const [quizData, setQuizData] = useState(null);
+  const [arenaCards, setArenaCards] = useState(null);
+  const [arenaTitle, setArenaTitle] = useState('');
+  const [progress, setProgress] = useState({ xp: 0, completed: {}, streak: 0 });
+  const [err, setErr] = useState('');
 
-  const hasSidebar = view !== 'home' && view !== 'generating';
-  const total = curriculum ? curriculum.modules.reduce((a, m) => a + m.lessons.length, 0) : 0;
-  const done = Object.keys(progress.completed).length;
-
-  const generate = async (skillName) => {
-    setSkill(skillName); setError(''); setView('generating');
-    try {
-      const data = await callAI(`Create a comprehensive learning curriculum for: "${skillName}"`,
-        `You are a world-class curriculum designer. Return ONLY a JSON object:
-{"title":"Course title","description":"2-sentence overview","estimatedHours":<number>,"level":"Beginner|Intermediate|Advanced",
-"modules":[{"id":"m1","title":"Module","description":"1-sentence desc","icon":"<emoji>","estimatedHours":<number>,
-"lessons":[{"id":"m1l1","title":"Lesson","duration":"20 min","type":"core|practice|project"}]}]}
-Exactly 4-5 modules with 3-4 lessons each.`);
-      setCurriculum(data); setView('curriculum');
-    } catch (e) { setError('Could not generate curriculum. Please try again.'); setView('home'); }
-  };
-
-  const selectLesson = async (mod, lesson) => {
-    setActiveModule(mod); setActiveLesson(lesson);
-    setLessonData(null); setLoadingLesson(true); setView('lesson');
+  const generate = async (skillName, scope) => {
+    setSkill(skillName); setErr(''); setGenerating(true);
+    const depth = {
+      'Crash Course': '2-3 modules, 2-3 lessons each.',
+      'Standard': '4-5 modules, 3-4 lessons each.',
+      'Mastery': '6-7 modules, 4-5 lessons each.',
+    }[scope] || '4-5 modules, 3-4 lessons each.';
     try {
       const data = await callAI(
-        `Write a detailed lesson for "${lesson.title}" in module "${mod.title}" of a "${skill}" course.`,
-        `You are an expert educator. Return ONLY JSON:
-{"title":"Lesson title","summary":"2-sentence overview",
-"sections":[{"heading":"heading","content":"140-word paragraph"}],
-"keyPoints":["takeaway x5"],
-"resources":[{"title":"name","description":"1-sentence","icon":"<emoji>"}],
-"quiz":[{"question":"?","options":["A","B","C","D"],"correct":<0-3>,"explanation":"why"}],
-"flashcards":[{"front":"term","back":"definition"}]}
-Exactly: 3-4 sections, 5 keyPoints, 3 resources, 5 quiz, 6 flashcards.`);
-      setLessonData(data);
-    } catch (e) {
-      console.error('Lesson generation failed:', e);
-      setError('Failed to load lesson. Please try again.');
-      setLoadingLesson(false);
+        `Create a curriculum for: "${skillName}"`,
+        `World-class curriculum designer. Return ONLY JSON:
+{"title":"","description":"2 sentences","estimatedHours":<n>,"level":"Beginner|Intermediate|Advanced","modules":[{"id":"m1","title":"","description":"1 sentence","icon":"<emoji>","estimatedHours":<n>,"lessons":[{"id":"m1l1","title":"","duration":"X min","type":"core|practice|project"}]}]}
+Use ${depth}`
+      );
+      setCurriculum(data);
+      setTab('journey');
+    } catch {
+      setErr('Failed to generate curriculum. Please try again.');
     }
-    setLoadingLesson(false);
+    setGenerating(false);
   };
 
-  const complete = (id) => setProgress(p => ({ ...p, completed: { ...p.completed, [id]: true }, xp: p.xp + 50 }));
+  const openLesson = async (mod, lesson) => {
+    setActiveMod(mod); setActiveLesson(lesson);
+    setLessonData(null); setLessonLoading(true); setSubview('lesson');
+    try {
+      const data = await callAI(
+        `Write a detailed lesson: "${lesson.title}" in "${mod.title}" for a "${skill}" course.`,
+        `Expert educator. Return ONLY JSON:
+{"title":"","summary":"2 sentences","sections":[{"heading":"","content":"140-word paragraph"}],"keyPoints":["x5"],"resources":[{"title":"","description":"1 sentence","icon":"<emoji>"}],"quiz":[{"question":"","options":["","","",""],"correct":<0-3>,"explanation":""}],"flashcards":[{"front":"term","back":"definition"}]}
+Exactly: 3-4 sections, 5 keyPoints, 3 resources, 5 quiz Qs, 6 flashcards.`
+      );
+      setLessonData(data);
+    } catch {
+      setErr('Failed to load lesson. Please try again.');
+    }
+    setLessonLoading(false);
+  };
 
-  const navTo = (dest) => setView(dest);
+  const complete = (id) => {
+    setProgress(p => ({
+      ...p,
+      completed: { ...p.completed, [id]: true },
+      xp: p.xp + 50,
+      streak: p.streak + 1,
+    }));
+  };
+
+  const openArena = (cards, title) => {
+    setArenaCards(cards); setArenaTitle(title); setSubview('arena');
+  };
+
+  const launchDailyArena = () => {
+    if (!curriculum) return;
+    const cards = curriculum.modules.flatMap(m =>
+      m.lessons.map(l => ({ front: l.title, back: m.description || `Review this in the lesson.` }))
+    ).slice(0, 8);
+    openArena(cards, curriculum.title);
+  };
+
+  const showNav = !subview && !generating;
 
   return (
-    <>
-      <style>{FONTS}</style>
+    <Ctx.Provider value={ctx}>
+      <style>{BASE}</style>
+
+      {/* error toast */}
       <AnimatePresence>
-        {error && (
-          <motion.div initial={{ opacity: 0, y: -12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
-            style={{ position: 'fixed', top: 14, left: '50%', transform: 'translateX(-50%)',
-              background: T.white, border: `1px solid rgba(220,38,38,0.22)`, borderRadius: 9,
-              padding: '9px 16px', fontFamily: ff.sans, fontSize: 13, color: T.red,
-              zIndex: 999, boxShadow: '0 4px 14px rgba(0,0,0,0.08)' }}>
-            {error}
+        {err && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setErr('')}
+            style={{
+              position: 'fixed', top: 14, left: '50%', transform: 'translateX(-50%)',
+              background: t.surface, border: `1px solid ${t.rLine}`,
+              borderRadius: 10, padding: '9px 16px',
+              fontFamily: ff.sans, fontSize: 13, color: t.danger,
+              zIndex: 999, boxShadow: '0 4px 20px rgba(0,0,0,0.2)',
+              cursor: 'pointer', maxWidth: 380, whiteSpace: 'nowrap',
+            }}>
+            {err}
           </motion.div>
         )}
       </AnimatePresence>
 
-      {hasSidebar && (
-        <Sidebar view={view} onNav={navTo} xp={progress.xp} completedCount={done} totalLessons={total}/>
-      )}
-
-      <div style={{ marginLeft: hasSidebar ? 210 : 0, minHeight: '100vh', background: T.cream,
-        transition: 'margin-left 0.3s', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ maxWidth: 430, margin: '0 auto', minHeight: '100vh', background: t.bg }}>
         <AnimatePresence mode="wait">
-          {view === 'home'       && <HomeView key="home" onGenerate={generate}/>}
-          {view === 'generating' && <GeneratingView key="gen" skill={skill}/>}
-          {view === 'curriculum' && curriculum && (
-            <CurriculumView key="curr" curriculum={curriculum} progress={progress} onSelectLesson={selectLesson}/>
+          {generating && (
+            <motion.div key="gen" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+              <GeneratingView skill={skill}/>
+            </motion.div>
           )}
-          {view === 'progress'   && <ProgressView key="prog" curriculum={curriculum} progress={progress}/>}
-          {view === 'lesson'     && (
-            <LessonView key="lesson" lessonData={lessonData} loading={loadingLesson}
-              moduleTitle={activeModule?.title} lessonId={activeLesson?.id} progress={progress}
-              onQuiz={(q,t) => { setQuizPayload({questions:q,title:t}); setView('quiz'); }}
-              onFlashcards={(c,t) => { setFcPayload({cards:c,title:t}); setView('flashcards'); }}
-              onComplete={complete}/>
+
+          {!generating && subview === 'lesson' && (
+            <motion.div key="lesson" initial={{ opacity: 0, x: 24 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 24 }} transition={{ duration: 0.24 }}>
+              <LessonView
+                lessonData={lessonData}
+                loading={lessonLoading}
+                moduleTitle={activeMod?.title}
+                lessonId={activeLesson?.id}
+                progress={progress}
+                onQuiz={(q, title) => { setQuizData({ q, title }); setSubview('quiz'); }}
+                onFlashcards={openArena}
+                onComplete={complete}
+                onBack={() => setSubview(null)}
+              />
+            </motion.div>
           )}
-          {view === 'quiz' && quizPayload?.questions && (
-            <QuizView key="quiz" quiz={quizPayload.questions} lessonTitle={quizPayload.title}
-              onComplete={(s,t) => setProgress(p => ({ ...p, xp: p.xp + s * 20 }))}
-              onBack={() => setView('lesson')}/>
+
+          {!generating && subview === 'quiz' && quizData?.q && (
+            <motion.div key="quiz" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+              <QuizView
+                quiz={quizData.q}
+                lessonTitle={quizData.title}
+                onComplete={(s) => setProgress(p => ({ ...p, xp: p.xp + s * 20 }))}
+                onBack={() => setSubview('lesson')}
+              />
+            </motion.div>
           )}
-          {view === 'flashcards' && fcPayload?.cards && (
-            <FlashcardsView key="fc" cards={fcPayload.cards} lessonTitle={fcPayload.title}
-              onBack={() => setView('lesson')}/>
+
+          {!generating && subview === 'arena' && arenaCards && (
+            <motion.div key="arena" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+              <ArenaView
+                cards={arenaCards}
+                lessonTitle={arenaTitle}
+                onBack={() => setSubview(subview === 'arena' && !lessonData ? null : 'lesson')}
+              />
+            </motion.div>
+          )}
+
+          {!generating && !subview && (
+            <motion.div key="tabs" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+              {tab === 'gen' && <HomeView onGenerate={generate}/>}
+              {tab === 'journey' && (
+                <JourneyView
+                  curriculum={curriculum}
+                  progress={progress}
+                  onLesson={openLesson}
+                  onArena={launchDailyArena}
+                  onTab={setTab}
+                />
+              )}
+              {tab === 'tree' && (
+                <SkillTreeView
+                  curriculum={curriculum}
+                  progress={progress}
+                  onLesson={openLesson}
+                  onTab={setTab}
+                />
+              )}
+            </motion.div>
           )}
         </AnimatePresence>
+
+        {showNav && <BottomNav tab={tab} setTab={setTab}/>}
       </div>
-    </>
+    </Ctx.Provider>
   );
 }
