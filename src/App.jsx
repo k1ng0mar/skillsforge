@@ -1,6 +1,49 @@
 import { useState, useEffect, useRef, createContext, useContext } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
+/* ─── PERSISTENCE ─── */
+const STORAGE_KEYS = {
+  journeys: 'sf_journeys',
+  activeJourney: 'sf_active_journey',
+  progress: 'sf_progress',
+  dark: 'sf_dark',
+  memory: 'sf_memory',
+  lessons: 'sf_lessons',
+};
+
+const API_BASE = typeof window !== 'undefined' && window.location.hostname !== 'localhost'
+  ? ''
+  : 'http://localhost:3001';
+
+/* ─── SM-2 SPACED REPETITION ─── */
+function sm2(ease, interval, rep, rating) {
+  let e = ease + (0.1 - (5 - rating) * (0.08 + (5 - rating) * 0.02));
+  if (e < 1.3) e = 1.3;
+  let i, r;
+  if (rating < 3) { i = 1; r = 0; }
+  else if (rep === 0) { i = 1; r = 1; }
+  else if (rep === 1) { i = 6; r = 2; }
+  else { i = Math.round(interval * e); r = rep + 1; }
+  return { ease: e, interval: i, rep: r };
+}
+
+function loadStorage(key, fallback) {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : fallback;
+  } catch { return fallback; }
+}
+
+function saveStorage(key, val) {
+  try { localStorage.setItem(key, JSON.stringify(val)); } catch {}
+}
+
+function useLocalStorage(key, fallback) {
+  const [val, setVal] = useState(() => loadStorage(key, fallback));
+  useEffect(() => { saveStorage(key, val); }, [key, val]);
+  return [val, setVal];
+}
+
 /* ─── FONTS + RESET ─── */
 const BASE = `
 @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,600;0,9..144,700;0,9..144,800;1,9..144,400&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
@@ -49,38 +92,18 @@ const useT = () => useContext(Ctx);
 
 /* ─── AI ─── */
 async function callAI(prompt, sys) {
-  const r = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+  const r = await fetch(`${API_BASE}/api/ai`, {
     method: "POST",
-    headers: { 
-      "Content-Type": "application/json",
-      // Groq uses standard Bearer auth.
-      "Authorization": `Bearer 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` 
-    },
-    body: JSON.stringify({
-      // can swap this for "mixtral-8x7b-32768" or "llama3-8b-8192"
-      model: "llama-3.3-70b-versatile", 
-      max_tokens: 1000,
-      response_format: { type: "json_object" },
-      messages: [
-        { 
-          role: "system", 
-          content: sys + "\n\nReturn ONLY valid JSON. No markdown fences, no preamble." 
-        },
-        { 
-          role: "user", 
-          content: prompt 
-        }
-      ],
-    }),
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ prompt, system: sys + "\n\nReturn ONLY valid JSON. No markdown fences, no preamble." }),
   });
 
   if (!r.ok) throw new Error(r.status);
-  
+
   const d = await r.json();
-  // Groq returns the text here
-  const raw = d.choices?.[0]?.message?.content || "";
-  
-  return JSON.parse(raw.replace(/```json|```/g, "").trim());
+  if (d.error) throw new Error(d.error);
+
+  return d;
 }
 
 /* ─── PRIMITIVES ─── */
@@ -492,7 +515,7 @@ function GeneratingView({ skill }) {
 }
 
 /* ─── JOURNEY (DASHBOARD) ─── */
-function JourneyView({ curriculum, progress, onLesson, onArena, onTab }) {
+function JourneyView({ journeys, activeJourneyId, curriculum, progress, memory, onLesson, onArena, onTab, onSwitch, onDelete, onExport, onImport, dueCards }) {
   const { t, dark } = useT();
 
   if (!curriculum) {
@@ -511,12 +534,42 @@ function JourneyView({ curriculum, progress, onLesson, onArena, onTab }) {
   const pct = total > 0 ? Math.round((done / total) * 100) : 0;
   const level = Math.floor(progress.xp / 200) + 1;
   const xpInLevel = progress.xp % 200;
-  const dueCards = Math.max(0, (total - done) * 6);
 
   return (
     <div style={{ paddingBottom: 100, overflowY: 'auto', height: '100vh' }}>
-      {/* top bar */}
-      <div style={{ padding: '16px 20px 8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      {/* journeys switcher */}
+      {journeys.length > 0 && (
+        <div style={{ padding: '0 20px 12px', borderBottom: `1px solid ${t.line}`, marginBottom: 12 }}>
+          <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 4 }}>
+            {journeys.map(j => (
+              <button key={j.id} onClick={() => onSwitch(j.id)}
+                style={{
+                  flexShrink: 0, padding: '5px 12px', borderRadius: 999,
+                  fontFamily: ff.sans, fontSize: 12, fontWeight: j.id === activeJourneyId ? 600 : 400,
+                  background: j.id === activeJourneyId ? t.pDim : 'transparent',
+                  color: j.id === activeJourneyId ? t.primary : t.muted,
+                  border: `1px solid ${j.id === activeJourneyId ? t.pLine : t.line}`,
+                  transition: 'all 0.13s',
+                }}>
+                {j.curriculum?.title || j.skill}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* settings row */}
+      <div style={{ padding: '0 20px 8px', display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+        <button onClick={onExport} style={{ fontFamily: ff.mono, fontSize: 10, color: t.muted, letterSpacing: 0.5, textTransform: 'uppercase', padding: '4px 8px', borderRadius: 6, background: 'transparent', border: `1px solid ${t.line}` }}>
+          Export
+        </button>
+        <label style={{ fontFamily: ff.mono, fontSize: 10, color: t.muted, letterSpacing: 0.5, textTransform: 'uppercase', padding: '4px 8px', borderRadius: 6, background: 'transparent', border: `1px solid ${t.line}`, cursor: 'pointer' }}>
+          Import
+          <input type="file" accept=".json" onChange={e => e.target.files[0] && onImport(e.target.files[0])} style={{ display: 'none' }}/>
+        </label>
+      </div>
+        {/* top bar */}
+      <div style={{ padding: '12px 20px 0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div>
           <p style={{ fontFamily: ff.mono, fontSize: 10, color: t.muted, letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: 3 }}>
             Active Journey
@@ -526,7 +579,6 @@ function JourneyView({ curriculum, progress, onLesson, onArena, onTab }) {
           </h1>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          {/* streak */}
           <div style={{
             display: 'flex', alignItems: 'center', gap: 6,
             background: t.sDim, border: `1px solid ${t.sLine}`,
@@ -539,7 +591,6 @@ function JourneyView({ curriculum, progress, onLesson, onArena, onTab }) {
               {progress.streak || 0}
             </span>
           </div>
-          {/* ring */}
           <div style={{ position: 'relative' }}>
             <Ring pct={pct} size={50} stroke={3.5}/>
             <div style={{
@@ -1138,20 +1189,26 @@ function QuizView({ quiz, lessonTitle, onComplete, onBack }) {
 }
 
 /* ─── ARENA (FLASHCARDS) ─── */
-function ArenaView({ cards, lessonTitle, onBack }) {
+function ArenaView({ cards, lessonTitle, onBack, onDone }) {
   const { t, dark } = useT();
   const [idx, setIdx] = useState(0);
   const [flipped, setFlipped] = useState(false);
   const [ratings, setRatings] = useState({});
   const [done, setDone] = useState(false);
+  const [ratedCards, setRatedCards] = useState([]);
 
   const card = cards[idx];
 
   const rate = (r) => {
     const next = { ...ratings, [idx]: r };
-    setRatings(next);
+    const rc = [...ratedCards, { ...cards[idx], rating: r }];
+    setRatings(next); setRatedCards(rc);
     if (idx + 1 >= cards.length) setDone(true);
     else { setIdx(i => i + 1); setFlipped(false); }
+  };
+
+  const finishArena = () => {
+    if (idx < cards.length - 1) { setIdx(0); setFlipped(false); setRatings({}); setRatedCards([]); setDone(false); }
   };
 
   if (done) {
@@ -1195,7 +1252,7 @@ function ArenaView({ cards, lessonTitle, onBack }) {
             </div>
           </Card>
           <div style={{ display: 'flex', gap: 9, justifyContent: 'center' }}>
-            <Btn v="outline" onClick={() => { setIdx(0); setFlipped(false); setRatings({}); setDone(false); }}>Retry</Btn>
+            <Btn v="outline" onClick={() => { onDone && onDone(ratings, ratedCards); finishArena(); }}>Retry</Btn>
             <Btn v="ghost" onClick={onBack}>Back</Btn>
           </div>
         </motion.div>
@@ -1319,14 +1376,26 @@ function ArenaView({ cards, lessonTitle, onBack }) {
 }
 
 /* ─── ROOT ─── */
+const DEFAULT_PROGRESS = { xp: 0, completed: {}, streak: 0, lastVisit: null };
+const DEFAULT_MEMORY = { cards: [], history: [] };
+
 export default function App() {
-  const [dark, setDark] = useState(true);
+  const [dark, setDark] = useState(() => loadStorage(STORAGE_KEYS.dark, true));
   const t = dark ? DARK : LIGHT;
-  const ctx = { t, dark, toggle: () => setDark(d => !d) };
+  const ctx = {
+    t, dark,
+    toggle: () => setDark(d => {
+      const next = !d;
+      saveStorage(STORAGE_KEYS.dark, next);
+      return next;
+    }),
+  };
 
   const [tab, setTab] = useState('gen');
-  const [subview, setSubview] = useState(null); // 'lesson' | 'quiz' | 'arena'
+  const [subview, setSubview] = useState(null);
   const [skill, setSkill] = useState('');
+  const [journeys, setJourneys] = useLocalStorage(STORAGE_KEYS.journeys, []);
+  const [activeJourneyId, setActiveJourneyId] = useLocalStorage(STORAGE_KEYS.activeJourney, null);
   const [curriculum, setCurriculum] = useState(null);
   const [generating, setGenerating] = useState(false);
   const [activeMod, setActiveMod] = useState(null);
@@ -1336,8 +1405,29 @@ export default function App() {
   const [quizData, setQuizData] = useState(null);
   const [arenaCards, setArenaCards] = useState(null);
   const [arenaTitle, setArenaTitle] = useState('');
-  const [progress, setProgress] = useState({ xp: 0, completed: {}, streak: 0 });
+  const [progress, setProgress] = useLocalStorage(STORAGE_KEYS.progress, DEFAULT_PROGRESS);
+  const [memory, setMemory] = useLocalStorage(STORAGE_KEYS.memory, DEFAULT_MEMORY);
+  const [lessons, setLessons] = useLocalStorage(STORAGE_KEYS.lessons, {});
   const [err, setErr] = useState('');
+
+  useEffect(() => {
+    if (!activeJourneyId && journeys.length > 0) {
+      setActiveJourneyId(journeys[0].id);
+    }
+  }, [activeJourneyId, journeys]);
+
+  useEffect(() => {
+    const j = journeys.find(j => j.id === activeJourneyId);
+    setCurriculum(j?.curriculum || null);
+  }, [activeJourneyId, journeys]);
+
+  const getProgress = (journeyId) => {
+    return progress[journeyId] || { xp: 0, completed: {}, streak: 0, lastVisit: null };
+  };
+
+  const setJourneyProgress = (journeyId, updater) => {
+    setProgress(p => ({ ...p, [journeyId]: typeof updater === 'function' ? updater(p[journeyId] || { xp: 0, completed: {}, streak: 0, lastVisit: null }) : updater }));
+  };
 
   const generate = async (skillName, scope) => {
     setSkill(skillName); setErr(''); setGenerating(true);
@@ -1353,7 +1443,10 @@ export default function App() {
 {"title":"","description":"2 sentences","estimatedHours":<n>,"level":"Beginner|Intermediate|Advanced","modules":[{"id":"m1","title":"","description":"1 sentence","icon":"<emoji>","estimatedHours":<n>,"lessons":[{"id":"m1l1","title":"","duration":"X min","type":"core|practice|project"}]}]}
 Use ${depth}`
       );
-      setCurriculum(data);
+      const jid = `j_${Date.now()}`;
+      const journey = { id: jid, skill: skillName, scope, curriculum: data, createdAt: Date.now() };
+      setJourneys(prev => [...prev, journey]);
+      setActiveJourneyId(jid);
       setTab('journey');
     } catch {
       setErr('Failed to generate curriculum. Please try again.');
@@ -1363,6 +1456,12 @@ Use ${depth}`
 
   const openLesson = async (mod, lesson) => {
     setActiveMod(mod); setActiveLesson(lesson);
+    const cacheKey = `${activeJourneyId}_${lesson.id}`;
+    const cached = lessons[cacheKey];
+    if (cached) {
+      setLessonData(cached); setLessonLoading(false); setSubview('lesson');
+      return;
+    }
     setLessonData(null); setLessonLoading(true); setSubview('lesson');
     try {
       const data = await callAI(
@@ -1372,6 +1471,7 @@ Use ${depth}`
 Exactly: 3-4 sections, 5 keyPoints, 3 resources, 5 quiz Qs, 6 flashcards.`
       );
       setLessonData(data);
+      setLessons(l => ({ ...l, [cacheKey]: data }));
     } catch {
       setErr('Failed to load lesson. Please try again.');
     }
@@ -1379,24 +1479,98 @@ Exactly: 3-4 sections, 5 keyPoints, 3 resources, 5 quiz Qs, 6 flashcards.`
   };
 
   const complete = (id) => {
-    setProgress(p => ({
-      ...p,
-      completed: { ...p.completed, [id]: true },
-      xp: p.xp + 50,
-      streak: p.streak + 1,
+    if (!activeJourneyId) return;
+    const lesson = curriculum?.modules?.flatMap(m => m.lessons)?.find(l => l.id === id);
+    const modTitle = curriculum?.modules?.find(m => m.lessons?.some(l => l.id === id))?.title;
+    setJourneyProgress(activeJourneyId, p => ({
+      ...p, completed: { ...p.completed, [id]: true }, xp: p.xp + 50, streak: p.streak + 1, lastVisit: Date.now(),
     }));
+    if (lesson) {
+      setMemory(m => ({
+        ...m,
+        cards: [...(m.cards || []).filter(c => c.lessonId !== id), { lessonId: id, title: lesson.title, module: modTitle, journeyId: activeJourneyId, learnedAt: Date.now(), nextReview: Date.now() + 86400000, interval: 1, rep: 0, ease: 2.5 }],
+        history: [{ type: 'lesson_complete', id, title: lesson.title, journeyId: activeJourneyId, ts: Date.now() }, ...(m.history || [])].slice(0, 100),
+      }));
+    }
   };
 
   const openArena = (cards, title) => {
     setArenaCards(cards); setArenaTitle(title); setSubview('arena');
   };
 
+  const arenaDone = (ratings, ratedCards) => {
+    if (!activeJourneyId) return;
+    setJourneyProgress(activeJourneyId, p => ({ ...p, xp: p.xp + 20 }));
+    if (ratedCards && ratedCards.length > 0) {
+      setMemory(m => {
+        const ratingMap = {};
+        ratedCards.forEach(rc => { ratingMap[rc.lessonId || rc.id] = rc.rating; });
+        const updatedCards = (m.cards || []).map(c => {
+          const r = ratingMap[c.lessonId || c.id];
+          if (r === undefined) return c;
+          const q = r === 'easy' ? 5 : r === 'good' ? 4 : 2;
+          const { ease, interval, rep } = sm2(c.ease || 2.5, c.interval || 1, c.rep || 0, q);
+          return { ...c, ease, interval, rep, nextReview: Date.now() + interval * 86400000 };
+        });
+        return { ...m, cards: updatedCards, history: [{ type: 'arena_done', title: arenaTitle, ts: Date.now() }, ...(m.history || [])].slice(0, 100) };
+      });
+    } else {
+      setMemory(m => ({ ...m, history: [{ type: 'arena_done', title: arenaTitle, ts: Date.now() }, ...(m.history || [])].slice(0, 100) }));
+    }
+  };
+
   const launchDailyArena = () => {
     if (!curriculum) return;
-    const cards = curriculum.modules.flatMap(m =>
-      m.lessons.map(l => ({ front: l.title, back: m.description || `Review this in the lesson.` }))
-    ).slice(0, 8);
-    openArena(cards, curriculum.title);
+    const dueCards = (memory.cards || []).filter(c => c.journeyId === activeJourneyId && (!c.nextReview || c.nextReview <= Date.now()));
+    if (dueCards.length > 0) {
+      openArena(dueCards.map(c => ({ ...c, front: c.title, back: `Module: ${c.module}` })), `${curriculum.title} — Review`);
+    } else {
+      const cards = curriculum.modules.flatMap(m =>
+        m.lessons.map(l => ({ front: l.title, back: m.description || `Review this in the lesson.` }))
+      ).slice(0, 8);
+      openArena(cards, curriculum.title);
+    }
+  };
+
+  const getDueCards = () => (memory.cards || []).filter(c => c.journeyId === activeJourneyId && (!c.nextReview || c.nextReview <= Date.now()));
+
+  const switchJourney = (id) => {
+    setActiveJourneyId(id); setSubview(null);
+  };
+
+  const deleteJourney = (id) => {
+    setJourneys(prev => prev.filter(j => j.id !== id));
+    setProgress(p => { const n = { ...p }; delete n[id]; return n; });
+    setMemory(m => ({ ...m, cards: (m.cards || []).filter(c => c.journeyId !== id), history: (m.history || []).filter(h => h.journeyId !== id) }));
+    if (activeJourneyId === id) {
+      const remaining = journeys.filter(j => j.id !== id);
+      setActiveJourneyId(remaining.length > 0 ? remaining[0].id : null);
+    }
+  };
+
+  const exportData = () => {
+    const data = { journeys, progress, memory, lessons, dark, exportedAt: Date.now() };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `skillforge-backup-${Date.now()}.json`; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const importData = (file) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = JSON.parse(e.target.result);
+        if (data.journeys) setJourneys(data.journeys);
+        if (data.progress) setProgress(p => ({ ...p, ...data.progress }));
+        if (data.memory) setMemory(data.memory);
+        if (data.lessons) setLessons(data.lessons);
+        if (typeof data.dark === 'boolean') { setDark(data.dark); saveStorage(STORAGE_KEYS.dark, data.dark); }
+        setErr('');
+      } catch { setErr('Failed to import data. Invalid file format.'); }
+    };
+    reader.readAsText(file);
   };
 
   const showNav = !subview && !generating;
@@ -1441,7 +1615,7 @@ Exactly: 3-4 sections, 5 keyPoints, 3 resources, 5 quiz Qs, 6 flashcards.`
                 loading={lessonLoading}
                 moduleTitle={activeMod?.title}
                 lessonId={activeLesson?.id}
-                progress={progress}
+                progress={getProgress(activeJourneyId)}
                 onQuiz={(q, title) => { setQuizData({ q, title }); setSubview('quiz'); }}
                 onFlashcards={openArena}
                 onComplete={complete}
@@ -1455,7 +1629,7 @@ Exactly: 3-4 sections, 5 keyPoints, 3 resources, 5 quiz Qs, 6 flashcards.`
               <QuizView
                 quiz={quizData.q}
                 lessonTitle={quizData.title}
-                onComplete={(s) => setProgress(p => ({ ...p, xp: p.xp + s * 20 }))}
+                onComplete={(s) => activeJourneyId && setJourneyProgress(activeJourneyId, p => ({ ...p, xp: p.xp + s * 20 }))}
                 onBack={() => setSubview('lesson')}
               />
             </motion.div>
@@ -1467,6 +1641,7 @@ Exactly: 3-4 sections, 5 keyPoints, 3 resources, 5 quiz Qs, 6 flashcards.`
                 cards={arenaCards}
                 lessonTitle={arenaTitle}
                 onBack={() => setSubview(subview === 'arena' && !lessonData ? null : 'lesson')}
+                onDone={arenaDone}
               />
             </motion.div>
           )}
@@ -1476,17 +1651,25 @@ Exactly: 3-4 sections, 5 keyPoints, 3 resources, 5 quiz Qs, 6 flashcards.`
               {tab === 'gen' && <HomeView onGenerate={generate}/>}
               {tab === 'journey' && (
                 <JourneyView
+                  journeys={journeys}
+                  activeJourneyId={activeJourneyId}
                   curriculum={curriculum}
-                  progress={progress}
+                  progress={getProgress(activeJourneyId)}
+                  memory={memory}
                   onLesson={openLesson}
                   onArena={launchDailyArena}
                   onTab={setTab}
+                  onSwitch={switchJourney}
+                  onDelete={deleteJourney}
+                  onExport={exportData}
+                  onImport={importData}
+                  dueCards={getDueCards().length}
                 />
               )}
               {tab === 'tree' && (
                 <SkillTreeView
                   curriculum={curriculum}
-                  progress={progress}
+                  progress={getProgress(activeJourneyId)}
                   onLesson={openLesson}
                   onTab={setTab}
                 />

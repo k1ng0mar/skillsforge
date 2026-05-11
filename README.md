@@ -1,17 +1,61 @@
-## Running React on Replit
+# SkillForge
 
-[React](https://reactjs.org/) is a popular JavaScript library for building user interfaces.
+AI-powered custom curriculum generator with spaced repetition learning.
 
-[Vite](https://vitejs.dev/) is a blazing fast frontend build tool that includes features like Hot Module Reloading (HMR), optimized builds, and TypeScript support out of the box.
+### Features
 
-Using the two in conjunction is one of the fastest ways to build a web app.
+- **AI Curriculum Generation** — Describe what you want to learn, get a custom curriculum with modules and lessons
+- **Skill Tree** — Visual neural pathway showing your learning progress
+- **Spaced Repetition (SM-2)** — Flashcard arena that adapts review intervals based on your ratings
+- **Multiple Journeys** — Track several learning paths at once
+- **Offline-First PWA** — Install on mobile/desktop, works offline after first load
+- **Data Persistence** — All progress, lessons, and settings saved to localStorage
+- **Export/Import** — Backup and restore all data as JSON
 
-### Getting Started
-- Hit run
-- Edit [App.jsx](#src/App.jsx) and watch it live update!
+### Setup
 
-By default, Replit runs the `dev` script, but you can configure it by changing the `run` field in the [configuration file](#.replit). Here are the vite docs for [serving production websites](https://vitejs.dev/guide/build.html)
+```bash
+npm install
+```
 
-### Typescript
+### Running
 
-Just rename any file from `.jsx` to `.tsx`. You can also try our [TypeScript Template](https://replit.com/@replit/React-TypeScript)
+```bash
+# Development (frontend only)
+npm run dev
+
+# Backend AI proxy (required for curriculum generation)
+npm run server
+
+# Both together
+npm start
+```
+
+### Environment
+
+Create `.env.local` with your Groq API key:
+
+```
+GROQ_API_KEY=your_key_here
+```
+
+Get a free API key at [console.groq.com](https://console.groq.com).
+
+### Production Build
+
+```bash
+npm run build
+```
+
+The `dist/` folder contains a fully offline-capable PWA. Serve it with any static host.
+
+### Data
+
+All data lives in `localStorage`:
+- `sf_journeys` — Curriculum and metadata
+- `sf_progress` — XP, completed lessons, streaks per journey
+- `sf_memory` — SM-2 flashcard data and history
+- `sf_lessons` — Cached generated lessons
+- `sf_dark` — Theme preference
+
+Use the **Export** button on the Journey tab to backup everything as JSON.
