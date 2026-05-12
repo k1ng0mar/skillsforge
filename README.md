@@ -16,7 +16,7 @@ AI-powered custom curriculum generator with spaced repetition learning.
 - **Final Exams** — Comprehensive curriculum-wide exam unlocked when all lessons are completed
 - **Badges & Rewards** — 11 achievements that auto-unlock as you hit milestones (lessons, streaks, XP, etc.)
 - **Streak System** — Daily streak with reset on missed days
-- **Cloud Sync** — Sign in to sync all progress across devices (Clerk auth + Neon Postgres)
+- **Cloud Sync** — Sign in to sync all progress across devices (Clerk auth + Neon Postgres) — **optional, app works fully without it**
 - **Offline-First PWA** — Install on mobile/desktop, works offline after first load
 - **Safe Area Support** — Notch and status-bar aware padding on mobile devices
 - **Data Persistence** — All progress, lessons, and settings saved to localStorage (synced to cloud when signed in)
@@ -31,10 +31,10 @@ npm install
 ### Running
 
 ```bash
-# Development (frontend only)
+# Development (frontend only — AI proxy not needed for local dev)
 npm run dev
 
-# Backend AI proxy (required for curriculum generation)
+# Backend AI proxy (required for curriculum generation locally)
 npm run server
 
 # Both together
@@ -43,47 +43,46 @@ npm start
 
 ### Environment
 
-Create `.env.local` with your API keys:
+Create `.env.local` with your API keys. Cloud sync is optional — the app works fully without these:
 
 ```
-# AI Providers
+# AI Providers (required for curriculum generation)
 GROQ_API_KEY=your_groq_key_here
 OPENROUTER_API_KEY=your_openrouter_key_here
 
-# Clerk Authentication (cloud sync)
-VITE_CLERK_PUBLISHABLE_KEY=pk_test_...
-CLERK_JWKS_URL=https://your-clerk-project.clerk.accounts.dev/.well-known/jwks.json
-CLERK_SECRET_KEY=sk_test_...
-
-# Neon Postgres (cloud sync)
-DATABASE_URL=postgresql://user:password@host/dbname?sslmode=require
+# Cloud sync (optional — app works without these)
+VITE_CLERK_PUBLISHABLE_KEY=pk_test_...       # Optional
+CLERK_JWKS_URL=https://your-clerk-project.clerk.accounts.dev/.well-known/jwks.json  # Optional
+CLERK_SECRET_KEY=sk_test_...                # Optional
+DATABASE_URL=postgresql://user:password@host/dbname?sslmode=require  # Optional
 ```
 
 - **Groq** for curriculum/exams: [console.groq.com](https://console.groq.com) (free tier, llama-3.3-70b-versatile)
 - **OpenRouter** for lessons & tutor (Hy3) and code lessons (Codestral): [openrouter.ai](https://openrouter.ai) (free tier)
 
-### Cloud Sync Setup (Required for Sync Feature)
+### Cloud Sync Setup (Optional)
+
+Without Clerk + Neon, the app works fully offline using localStorage. To enable cross-device sync:
 
 **1. Clerk — Authentication**
 
 1. Go to [clerk.com](https://clerk.com) and create a new application (choose any sign-in method)
-2. Copy your **Publishable Key** → add as `VITE_CLERK_PUBLISHABLE_KEY` in `.env.local` and Vercel env vars
-3. Copy your **JWKS URL** (format: `https://{slug}.clerk.accounts.dev/.well-known/jwks.json`) → add as `CLERK_JWKS_URL`
-4. Copy your **Secret Key** → add as `CLERK_SECRET_KEY` in `.env.local` and Vercel env vars (secret, never prefix with `VITE_`)
-5. In Clerk dashboard → JWT Templates → Create → scroll down to **Raw JWks endpoint** → copy the URL (or construct: `https://{slug}.clerk.accounts.dev/.well-known/jwks.json`)
+2. Go to your Clerk dashboard → **API Keys** → copy your **Publishable Key** → add as `VITE_CLERK_PUBLISHABLE_KEY` in `.env.local` and Vercel env vars
+3. Construct your JWKS URL: `https://{your-clerk-slug}.clerk.accounts.dev/.well-known/jwks.json` → add as `CLERK_JWKS_URL`
+4. In Clerk dashboard → **API Keys** → copy your **Secret Key** → add as `CLERK_SECRET_KEY` in `.env.local` and Vercel env vars (never prefix with `VITE_`)
 
 **2. Neon — Database**
 
 1. Go to [neon.tech](https://neon.tech) and create a new project
-2. Copy your **Connection string** (looks like `postgresql://user:password@host/dbname?sslmode=require`) → add as `DATABASE_URL` in `.env.local` and Vercel env vars
-3. In Neon SQL Editor (or `psql`), run the migration from `migrations/001_create_user_data.sql`
+2. Copy your **Connection string** → add as `DATABASE_URL` in `.env.local` and Vercel env vars
+3. In Neon SQL Editor, run the migration from `migrations/001_create_user_data.sql`
 
 **3. Sync Flow**
 
 - Sign in via the **Sign In** button in the top bar
-- Data syncs automatically to the cloud after every action (optimistic local writes — app never blocks on sync)
+- Data syncs automatically after every action (optimistic local writes — app never blocks on sync)
 - On sign-in, cloud data overwrites local if the cloud is newer
-- The sync status icon in the top bar shows: idle / syncing / synced / error
+- The sync status icon shows: spinning (syncing) / checkmark (synced) / error (failed)
 
 ### Production Build
 
@@ -91,7 +90,7 @@ DATABASE_URL=postgresql://user:password@host/dbname?sslmode=require
 npm run build
 ```
 
-The `dist/` folder contains a fully offline-capable PWA. Serve it with any static host.
+The `dist/` folder contains a fully offline-capable PWA.
 
 ### Deploy to Vercel
 
@@ -101,17 +100,17 @@ The `dist/` folder contains a fully offline-capable PWA. Serve it with any stati
 
 Add these environment variables in **Vercel → Project → Settings → Environment Variables**:
 
-| Name | Value |
-|------|-------|
-| `GROQ_API_KEY` | Your Groq API key |
-| `OPENROUTER_API_KEY` | Your OpenRouter API key |
-| `VITE_CLERK_PUBLISHABLE_KEY` | Your Clerk publishable key |
-| `CLERK_JWKS_URL` | Your Clerk JWKS URL |
-| `CLERK_SECRET_KEY` | Your Clerk secret key |
-| `DATABASE_URL` | Your Neon connection string |
+| Name | Required | Notes |
+|------|---------|-------|
+| `GROQ_API_KEY` | Yes | Groq API key |
+| `OPENROUTER_API_KEY` | Yes | OpenRouter API key |
+| `VITE_CLERK_PUBLISHABLE_KEY` | No | Clerk publishable key (enables sign-in) |
+| `CLERK_JWKS_URL` | No | Clerk JWKS URL |
+| `CLERK_SECRET_KEY` | No | Clerk secret key |
+| `DATABASE_URL` | No | Neon connection string |
 
 The project includes:
-- `api/ai.mjs` — Serverless function replacing the Express backend (supports multi-provider model routing)
+- `api/ai.mjs` — Serverless AI proxy (multi-provider model routing)
 - `api/sync/route.js` — Cloud sync endpoint (Clerk JWT verify + Neon upsert)
 - `vercel.json` — Vite build config
 

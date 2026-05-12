@@ -379,7 +379,7 @@ function BottomNav({ tab, setTab }) {
 const CHIPS = ['Advanced Rust', 'Quantum Physics', 'Machine Learning', 'Neuroscience', 'Options Trading', 'System Design', 'Stoic Philosophy'];
 
 function HomeView({ onGenerate }) {
-  const { t, dark, toggle } = useT();
+  const { t, dark } = useT();
   const [val, setVal] = useState('');
   const [scope, setScope] = useState('Standard');
   const ref = useRef();
@@ -399,48 +399,6 @@ function HomeView({ onGenerate }) {
       display: 'flex', flexDirection: 'column',
       paddingTop: 'env(safe-area-inset-top, 0px)',
     }}>
-      {/* top bar */}
-      <div style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '16px 20px',
-      }}>
-        <span style={{ fontFamily: ff.serif, fontSize: 18, fontWeight: 700, color: t.txt, letterSpacing: '-0.3px' }}>
-          SkillsForge
-        </span>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          {syncStatus === 'syncing' && (
-            <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
-              style={{ width: 14, height: 14, borderRadius: '50%', border: `2px solid ${t.line}`, borderTopColor: t.primary }}/>
-          )}
-          {syncStatus === 'synced' && (
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={t.success} strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-          )}
-          {syncStatus === 'error' && (
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={t.danger} strokeWidth="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-          )}
-          <button onClick={toggle}
-            style={{ width: 30, height: 30, borderRadius: 7, background: t.surface, border: `1px solid ${t.line}`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: t.muted, fontSize: 13 }}>
-            {dark ? '○' : '●'}
-          </button>
-          {!isSignedIn ? (
-            <button
-              onClick={() => window.location.href = '/api/auth/sign-in'}
-              style={{ fontFamily: ff.sans, fontSize: 12, color: t.primary, fontWeight: 600, padding: '4px 10px', borderRadius: 999, border: `1px solid ${t.pLine}`, background: t.pDim }}>
-              Sign In
-            </button>
-          ) : (
-            <div style={{ width: 28, height: 28, borderRadius: '50%', background: t.primary, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-              {user?.imageUrl ? (
-                <img src={user.imageUrl} alt="avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }}/>
-              ) : (
-                <span style={{ fontFamily: ff.sans, fontSize: 11, fontWeight: 700, color: '#000' }}>
-                  {(user?.firstName?.[0] || user?.emailAddresses?.[0]?.emailAddress?.[0] || 'U').toUpperCase()}
-                </span>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
       <div style={{ flex: 1, padding: '28px 24px 0' }}>
         <motion.h1
           initial={{ opacity: 0, y: 16 }}
@@ -1321,8 +1279,8 @@ function LessonView({ lessonData, loading, moduleTitle, lessonId, progress, onQu
             <p style={{ fontFamily: ff.mono, fontSize: 10, fontWeight: 600, color: t.primary, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 14 }}>
               Key Takeaways
             </p>
-            {lessonData.keyPoints.map((pt, i) => (
-              <div key={i} style={{ display: 'flex', gap: 10, marginBottom: i < lessonData.keyPoints.length - 1 ? 10 : 0 }}>
+            {lessonData.keyPoints?.map((pt, i) => (
+              <div key={i} style={{ display: 'flex', gap: 10, marginBottom: i < (lessonData.keyPoints?.length ?? 0) - 1 ? 10 : 0 }}>
                 <span style={{ fontFamily: ff.mono, fontSize: 10, color: t.primary, fontWeight: 600, marginTop: 3, flexShrink: 0 }}>
                   {String(i + 1).padStart(2, '0')}
                 </span>
@@ -1971,7 +1929,7 @@ CRITICAL: ${cfg.contentHint}`
         `Expert university-level educator. Return ONLY JSON:
 {"title":"","summary":"2 sentences","sections":[{"heading":"","content":"<n>-word paragraph"}],"keyPoints":["x5"],"resources":[{"title":"","description":"1 sentence","icon":"<emoji>"}],"quiz":[{"question":"","options":["","","",""],"correct":<0-3>,"explanation":""}],"flashcards":[{"front":"term","back":"definition"}]}
 MUST contain ${cfg.numSections} sections. Each section MUST be ${cfg.lesWordCount} words minimum — NO shorter, NO fluff.
-${scope === 'Mastery' ? `MASTERY LEVEL — NO STONE LEFT UNTURNED. This must read like a top-tier university lecture. Cover: historical context and motivation, formal definitions with notation, complete derivations step-by-step, multiple solved examples at increasing difficulty, common misconceptions with corrections, prerequisite knowledge links, edge cases, real-world applications, and performance/accuracy tradeoffs. Every section must contain entirely new information — zero repetition across sections.` : scope === 'Standard' ? `Provide thorough explanations, one detailed worked example, conceptual depth, and brief practical application.` : `Provide a concise overview with essential concepts and one clear worked example.`}
+${curriculum?.scope === 'Mastery' ? `MASTERY LEVEL — NO STONE LEFT UNTURNED. This must read like a top-tier university lecture. Cover: historical context and motivation, formal definitions with notation, complete derivations step-by-step, multiple solved examples at increasing difficulty, common misconceptions with corrections, prerequisite knowledge links, edge cases, real-world applications, and performance/accuracy tradeoffs. Every section must contain entirely new information — zero repetition across sections.` : curriculum?.scope === 'Standard' ? `Provide thorough explanations, one detailed worked example, conceptual depth, and brief practical application.` : `Provide a concise overview with essential concepts and one clear worked example.`}
 For STEM/math/physics: include formal mathematical notation, complete derivations, at least 2 worked examples (one basic, one advanced), and common student misconceptions.
 For code/programming: include algorithm analysis (time + space complexity), complete working implementation with line-by-line comment explanations, test cases, performance tradeoffs, and real-world usage patterns.
 5 keyPoints, 3 resources, 5 quiz Qs (mix of conceptual and application), 6 flashcards.`, 'auto', skill
@@ -2191,6 +2149,50 @@ Exactly 10 questions covering all modules.`
   return (
     <Ctx.Provider value={ctx}>
       <style>{BASE}</style>
+
+      {/* top bar */}
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: '16px 20px',
+        paddingTop: 'calc(16px + env(safe-area-inset-top, 0px))',
+      }}>
+        <span style={{ fontFamily: ff.serif, fontSize: 18, fontWeight: 700, color: t.txt, letterSpacing: '-0.3px' }}>
+          SkillsForge
+        </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {syncStatus === 'syncing' && (
+            <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
+              style={{ width: 14, height: 14, borderRadius: '50%', border: `2px solid ${t.line}`, borderTopColor: t.primary }}/>
+          )}
+          {syncStatus === 'synced' && (
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={t.success} strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+          )}
+          {syncStatus === 'error' && (
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={t.danger} strokeWidth="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          )}
+          <button onClick={toggleDark}
+            style={{ width: 30, height: 30, borderRadius: 7, background: t.surface, border: `1px solid ${t.line}`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: t.muted, fontSize: 13 }}>
+            {dark ? '○' : '●'}
+          </button>
+          {!isSignedIn ? (
+            <button
+              onClick={() => window.location.href = '/api/auth/sign-in'}
+              style={{ fontFamily: ff.sans, fontSize: 12, color: t.primary, fontWeight: 600, padding: '4px 10px', borderRadius: 999, border: `1px solid ${t.pLine}`, background: t.pDim }}>
+              Sign In
+            </button>
+          ) : (
+            <div style={{ width: 28, height: 28, borderRadius: '50%', background: t.primary, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+              {user?.imageUrl ? (
+                <img src={user.imageUrl} alt="avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }}/>
+              ) : (
+                <span style={{ fontFamily: ff.sans, fontSize: 11, fontWeight: 700, color: '#000' }}>
+                  {(user?.firstName?.[0] || user?.emailAddresses?.[0]?.emailAddress?.[0] || 'U').toUpperCase()}
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
 
       {/* error toast */}
       <AnimatePresence>
