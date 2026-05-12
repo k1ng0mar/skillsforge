@@ -813,7 +813,7 @@ function SkillTreeView({ journeys, activeJourneyId, curriculum, progress, onLess
 
   const isActive = (i) => !progress.completed[flat[i].id] && flat.slice(0, i).every(n => progress.completed[n.id]);
   const allDone = flat.every(n => progress.completed[n.id]);
-  const examDone = progress.examPassed;
+  const examDone = progress.examPassed || false;
 
   return (
     <div style={{ paddingBottom: 100, overflowY: 'auto', height: '100vh' }}>
@@ -1004,13 +1004,13 @@ function SkillTreeView({ journeys, activeJourneyId, curriculum, progress, onLess
               style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 300 }}
             />
             <motion.div
-              initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
+              initial={{ y: '100%', x: '-50%' }} animate={{ y: 0, x: '-50%' }} exit={{ y: '100%', x: '-50%' }}
               transition={{ type: 'spring', damping: 28, stiffness: 280 }}
               style={{
                 position: 'fixed', bottom: 0,
-                left: '50%', transform: 'translateX(-50%)',
+                left: '50%',
                 width: 'min(100%, 430px)',
-                maxHeight: '80vh', overflowY: 'auto',
+                maxHeight: '85vh', overflowY: 'auto',
                 background: t.surface,
                 borderRadius: '20px 20px 0 0',
                 padding: '12px 24px calc(env(safe-area-inset-bottom, 0px) + 24px)',
@@ -1612,6 +1612,7 @@ export default function App() {
   const [quizData, setQuizData] = useState(null);
   const [arenaCards, setArenaCards] = useState(null);
   const [arenaTitle, setArenaTitle] = useState('');
+  const [arenaReturnTo, setArenaReturnTo] = useState(null);
   const [progress, setProgress] = useLocalStorage(STORAGE_KEYS.progress, DEFAULT_PROGRESS);
   const [memory, setMemory] = useLocalStorage(STORAGE_KEYS.memory, DEFAULT_MEMORY);
   const [lessons, setLessons] = useLocalStorage(STORAGE_KEYS.lessons, {});
@@ -1727,7 +1728,7 @@ Exactly: 3-4 sections, 5 keyPoints, 3 resources, 5 quiz Qs, 6 flashcards.`
   };
 
   const openArena = (cards, title) => {
-    setArenaCards(cards); setArenaTitle(title); setSubview('arena');
+    setArenaCards(cards); setArenaTitle(title); setArenaReturnTo(subview === 'lesson' ? 'lesson' : null); setSubview('arena');
   };
 
   const arenaDone = (ratings, ratedCards) => {
@@ -1757,7 +1758,7 @@ Exactly: 3-4 sections, 5 keyPoints, 3 resources, 5 quiz Qs, 6 flashcards.`
     if (dueCards.length > 0) {
       openArena(dueCards.map(c => ({ ...c, front: c.title, back: `Module: ${c.module}` })), `${curriculum.title} — Review`);
     } else {
-      const cards = curriculum.modules.flatMap(m =>
+      const cards = (curriculum.modules || []).flatMap(m =>
         m.lessons.map(l => ({ front: l.title, back: m.description || `Review this in the lesson.` }))
       ).slice(0, 8);
       openArena(cards, curriculum.title);
@@ -1767,6 +1768,8 @@ Exactly: 3-4 sections, 5 keyPoints, 3 resources, 5 quiz Qs, 6 flashcards.`
   const getDueCards = () => (memory.cards || []).filter(c => c.journeyId === activeJourneyId && (!c.nextReview || c.nextReview <= Date.now()));
 
   const switchJourney = (id) => {
+    const j = journeys.find(j => j.id === id);
+    if (j) setSkill(j.skill);
     setActiveJourneyId(id); setSubview(null);
   };
 
@@ -1846,7 +1849,7 @@ Exactly 10 questions covering all modules.`
   };
 
   const exportData = () => {
-    const data = { journeys, progress, memory, lessons, dark, exportedAt: Date.now() };
+    const data = { journeys, progress, memory, lessons, badges, dark, exportedAt: Date.now() };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -1863,6 +1866,7 @@ Exactly 10 questions covering all modules.`
         if (data.progress) setProgress(p => ({ ...p, ...data.progress }));
         if (data.memory) setMemory(data.memory);
         if (data.lessons) setLessons(data.lessons);
+        if (data.badges) setBadges(data.badges);
         if (typeof data.dark === 'boolean') { setDark(data.dark); saveStorage(STORAGE_KEYS.dark, data.dark); }
         setErr('');
       } catch { setErr('Failed to import data. Invalid file format.'); }
@@ -1937,7 +1941,7 @@ Exactly 10 questions covering all modules.`
               <ArenaView
                 cards={arenaCards}
                 lessonTitle={arenaTitle}
-                onBack={() => setSubview(subview === 'arena' && !lessonData ? null : 'lesson')}
+                onBack={() => setSubview(arenaReturnTo === 'lesson' ? 'lesson' : null)}
                 onDone={arenaDone}
               />
             </motion.div>
