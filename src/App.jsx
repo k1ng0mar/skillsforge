@@ -9,7 +9,27 @@ const STORAGE_KEYS = {
   dark: 'sf_dark',
   memory: 'sf_memory',
   lessons: 'sf_lessons',
+  badges: 'sf_badges',
 };
+
+/* ─── BADGES ─── */
+const BADGE_DEFS = [
+  { id: 'first_lesson', label: 'First Steps', desc: 'Complete your first lesson', icon: '🌱', check: (p, allP) => Object.keys(p.completed || {}).length >= 1 },
+  { id: 'scholar', label: 'Scholar', desc: 'Complete 5 lessons', icon: '📚', check: (p, allP) => Object.keys(p.completed || {}).length >= 5 },
+  { id: 'module_master', label: 'Module Master', desc: 'Complete an entire module', icon: '🏗️', check: (p, allP) => false },
+  { id: 'pathfinder', label: 'Pathfinder', desc: 'Complete a whole curriculum', icon: '🌟', check: (p, allP) => false },
+  { id: 'streak_3', label: 'Habit Builder', desc: '3-day streak', icon: '🔥', check: (p, allP) => (p.streak || 0) >= 3 },
+  { id: 'streak_7', label: 'Consistent', desc: '7-day streak', icon: '💪', check: (p, allP) => (p.streak || 0) >= 7 },
+  { id: 'centurion', label: 'Centurion', desc: 'Earn 200 XP', icon: '⭐', check: (p, allP) => (p.xp || 0) >= 200 },
+  { id: 'xp500', label: 'Knowledge Seeker', desc: 'Earn 500 XP', icon: '🏆', check: (p, allP) => (p.xp || 0) >= 500 },
+  { id: 'xp1000', label: 'Sage', desc: 'Earn 1000 XP', icon: '👑', check: (p, allP) => (p.xp || 0) >= 1000 },
+  { id: 'pluralist', label: 'Pluralist', desc: 'Generate 2+ curricula', icon: '🎯', check: (p, allP) => allP && Object.keys(allP).filter(k => allP[k]?.xp > 0).length >= 2 },
+  { id: 'exam_ace', label: 'Exam Ace', desc: 'Pass a final exam', icon: '🎓', check: (p, allP) => p.examPassed || false },
+];
+
+function checkNewBadges(progress, allProgress, earned) {
+  return BADGE_DEFS.filter(b => !earned.includes(b.id) && b.check(progress, allProgress)).map(b => b.id);
+}
 
 const API_BASE = '';
 
@@ -316,6 +336,7 @@ function HomeView({ onGenerate }) {
     <div style={{
       minHeight: '100vh', background: t.bg,
       display: 'flex', flexDirection: 'column',
+      paddingTop: 'env(safe-area-inset-top, 0px)',
     }}>
       {/* top bar */}
       <div style={{
@@ -513,11 +534,24 @@ function GeneratingView({ skill }) {
 }
 
 /* ─── JOURNEY (DASHBOARD) ─── */
-function JourneyView({ journeys, activeJourneyId, curriculum, progress, memory, onLesson, onArena, onTab, onSwitch, onDelete, onExport, onImport, dueCards }) {
+function JourneyView({ journeys, activeJourneyId, curriculum, progress, memory, badges, onLesson, onArena, onTab, onSwitch, onDelete, onExport, onImport, dueCards }) {
   const { t, dark } = useT();
 
   if (!curriculum) {
-    return <Empty msg="No active journey yet." action="Generate one" onAction={() => onTab('gen')}/>;
+    return (
+      <div style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}>
+        <Empty msg="No active journey yet." action="Generate one" onAction={() => onTab('gen')}/>
+        <div style={{ textAlign: 'center', marginTop: -12 }}>
+          <span style={{ fontFamily: ff.sans, fontSize: 12, color: t.faint }}>or</span>
+        </div>
+        <div style={{ textAlign: 'center', marginTop: 8 }}>
+          <label style={{ fontFamily: ff.sans, fontSize: 13, color: t.muted, padding: '8px 16px', borderRadius: 999, border: `1px solid ${t.line}`, cursor: 'pointer', display: 'inline-block' }}>
+            Import existing journey
+            <input type="file" accept=".json" onChange={e => e.target.files[0] && onImport(e.target.files[0])} style={{ display: 'none' }}/>
+          </label>
+        </div>
+      </div>
+    );
   }
 
   let nextMod = null, nextLesson = null;
@@ -537,7 +571,7 @@ function JourneyView({ journeys, activeJourneyId, curriculum, progress, memory, 
     <div style={{ paddingBottom: 100, overflowY: 'auto', height: '100vh' }}>
       {/* journeys switcher */}
       {journeys.length > 0 && (
-        <div style={{ padding: '0 20px 12px', borderBottom: `1px solid ${t.line}`, marginBottom: 12 }}>
+        <div style={{ padding: 'calc(env(safe-area-inset-top, 0px) + 0px) 20px 12px', borderBottom: `1px solid ${t.line}`, marginBottom: 12 }}>
           <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 4 }}>
             {journeys.map(j => (
               <button key={j.id} onClick={() => onSwitch(j.id)}
@@ -698,6 +732,40 @@ function JourneyView({ journeys, activeJourneyId, curriculum, progress, memory, 
           </Card>
         </div>
 
+        {/* badges */}
+        {badges && badges.length > 0 && (
+          <div style={{ marginBottom: 18 }}>
+            <p style={{ fontFamily: ff.sans, fontSize: 11, fontWeight: 600, color: t.muted, letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 10 }}>
+              Badges ({badges.length}/{BADGE_DEFS.length})
+            </p>
+            <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4 }}>
+              {BADGE_DEFS.map(b => {
+                const earned = badges.find(x => x.id === b.id);
+                return (
+                  <div key={b.id} style={{
+                    flexShrink: 0, width: 82,
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6,
+                    opacity: earned ? 1 : 0.3,
+                    transition: 'opacity 0.2s',
+                  }}>
+                    <div style={{
+                      width: 48, height: 48, borderRadius: 12,
+                      background: earned ? t.pDim : t.surface,
+                      border: `1px solid ${earned ? t.pLine : t.line}`,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22,
+                    }}>
+                      {b.icon}
+                    </div>
+                    <p style={{ fontFamily: ff.mono, fontSize: 9, fontWeight: 600, color: earned ? t.primary : t.faint, textAlign: 'center', letterSpacing: 0.3 }}>
+                      {b.label}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* completed recently */}
         {done > 0 && (
           <div>
@@ -727,7 +795,7 @@ function JourneyView({ journeys, activeJourneyId, curriculum, progress, memory, 
 }
 
 /* ─── SKILL TREE ─── */
-function SkillTreeView({ curriculum, progress, onLesson, onTab }) {
+function SkillTreeView({ journeys, activeJourneyId, curriculum, progress, onLesson, onTab, onSwitch, onStartExam }) {
   const { t, dark } = useT();
   const [sheet, setSheet] = useState(null); // { mod, lesson, done, active }
 
@@ -740,9 +808,31 @@ function SkillTreeView({ curriculum, progress, onLesson, onTab }) {
   );
 
   const isActive = (i) => !progress.completed[flat[i].id] && flat.slice(0, i).every(n => progress.completed[n.id]);
+  const allDone = flat.every(n => progress.completed[n.id]);
+  const examDone = progress.examPassed;
 
   return (
     <div style={{ paddingBottom: 100, overflowY: 'auto', height: '100vh' }}>
+      {/* journeys switcher */}
+      {journeys.length > 0 && (
+        <div style={{ padding: 'calc(env(safe-area-inset-top, 0px) + 12px) 20px 12px', borderBottom: `1px solid ${t.line}`, marginBottom: 12 }}>
+          <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 4 }}>
+            {journeys.map(j => (
+              <button key={j.id} onClick={() => onSwitch(j.id)}
+                style={{
+                  flexShrink: 0, padding: '5px 12px', borderRadius: 999,
+                  fontFamily: ff.sans, fontSize: 12, fontWeight: j.id === activeJourneyId ? 600 : 400,
+                  background: j.id === activeJourneyId ? t.pDim : 'transparent',
+                  color: j.id === activeJourneyId ? t.primary : t.muted,
+                  border: `1px solid ${j.id === activeJourneyId ? t.pLine : t.line}`,
+                  transition: 'all 0.13s',
+                }}>
+                {j.curriculum?.title || j.skill}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       <div style={{ padding: '16px 20px 20px' }}>
         <p style={{ fontFamily: ff.mono, fontSize: 10, color: t.muted, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 6 }}>
           Neural Pathway
@@ -852,6 +942,54 @@ function SkillTreeView({ curriculum, progress, onLesson, onTab }) {
         })}
       </div>
 
+      {/* final exam node */}
+      {allDone && (
+        <div style={{ padding: '0 20px 32px' }}>
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 14,
+              background: examDone ? t.sDim : t.pDim,
+              border: `1px solid ${examDone ? t.sLine : t.pLine}`,
+              borderRadius: 16, padding: '16px 20px',
+              cursor: examDone ? 'default' : 'pointer',
+            }}
+            onClick={examDone ? null : onStartExam}
+          >
+            <div style={{
+              width: 44, height: 44, borderRadius: '50%',
+              background: examDone ? t.sDim : t.pDim,
+              border: `2px solid ${examDone ? t.success : t.primary}`,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+            }}>
+              {examDone ? (
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={t.success} strokeWidth="3">
+                  <polyline points="20 6 9 17 4 12"/>
+                </svg>
+              ) : (
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={t.primary} strokeWidth="2.5">
+                  <circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>
+                </svg>
+              )}
+            </div>
+            <div style={{ flex: 1 }}>
+              <p style={{ fontFamily: ff.serif, fontSize: 17, fontWeight: 700, color: t.txt, marginBottom: 2 }}>
+                {examDone ? 'Exam Passed' : 'Final Exam'}
+              </p>
+              <p style={{ fontFamily: ff.sans, fontSize: 12, color: t.muted }}>
+                {examDone ? 'Comprehensive curriculum assessment completed' : 'Test your knowledge across all modules'}
+              </p>
+            </div>
+            {!examDone && (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={t.primary} strokeWidth="2.5" strokeLinecap="round">
+                <path d="M5 12h14M12 5l7 7-7 7"/>
+              </svg>
+            )}
+          </motion.div>
+        </div>
+      )}
+
       {/* bottom sheet */}
       <AnimatePresence>
         {sheet && (
@@ -947,7 +1085,7 @@ function LessonView({ lessonData, loading, moduleTitle, lessonId, progress, onQu
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: t.bg, display: 'flex', flexDirection: 'column' }}>
+      <div style={{ minHeight: '100vh', background: t.bg, display: 'flex', flexDirection: 'column', paddingTop: 'env(safe-area-inset-top, 0px)' }}>
       {/* progress bar */}
       <div style={{ position: 'sticky', top: 0, zIndex: 10, height: 3, background: t.line }}>
         <motion.div animate={{ width: `${scrollPct}%` }} style={{ height: '100%', background: t.primary }}/>
@@ -955,9 +1093,9 @@ function LessonView({ lessonData, loading, moduleTitle, lessonId, progress, onQu
 
       {/* sticky header */}
       <div style={{
-        position: 'sticky', top: 3, zIndex: 10,
+        position: 'sticky', top: 0, zIndex: 10,
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '13px 20px',
+        padding: 'calc(13px + env(safe-area-inset-top, 0px)) 20px 13px',
         background: dark ? 'rgba(9,10,12,0.92)' : 'rgba(244,242,236,0.92)',
         backdropFilter: 'blur(12px)',
         borderBottom: `1px solid ${t.line}`,
@@ -1048,11 +1186,16 @@ function LessonView({ lessonData, loading, moduleTitle, lessonId, progress, onQu
             COMPLETE LESSON →
           </Btn>
         ) : (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '14px 0' }}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={t.success} strokeWidth="2.5">
-              <polyline points="20 6 9 17 4 12"/>
-            </svg>
-            <span style={{ fontFamily: ff.sans, fontSize: 14, fontWeight: 600, color: t.success }}>Lesson completed</span>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, padding: '14px 0' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={t.success} strokeWidth="2.5">
+                <polyline points="20 6 9 17 4 12"/>
+              </svg>
+              <span style={{ fontFamily: ff.sans, fontSize: 14, fontWeight: 600, color: t.success }}>Lesson completed</span>
+            </div>
+            <Btn v="outline" onClick={onBack} style={{ letterSpacing: 0.5 }}>
+              Back to Journey →
+            </Btn>
           </div>
         )}
       </div>
@@ -1110,7 +1253,7 @@ function QuizView({ quiz, lessonTitle, onComplete, onBack }) {
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: t.bg, display: 'flex', flexDirection: 'column' }}>
+    <div style={{ minHeight: '100vh', background: t.bg, display: 'flex', flexDirection: 'column', paddingTop: 'env(safe-area-inset-top, 0px)' }}>
       <div style={{ padding: '16px 20px 14px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
           <button onClick={onBack} style={{ fontFamily: ff.sans, fontSize: 13, color: t.muted }}>← Back</button>
@@ -1259,7 +1402,7 @@ function ArenaView({ cards, lessonTitle, onBack, onDone }) {
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: t.bg, display: 'flex', flexDirection: 'column' }}>
+    <div style={{ minHeight: '100vh', background: t.bg, display: 'flex', flexDirection: 'column', paddingTop: 'env(safe-area-inset-top, 0px)' }}>
       {/* header */}
       <div style={{ padding: '14px 20px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10 }}>
@@ -1406,6 +1549,9 @@ export default function App() {
   const [progress, setProgress] = useLocalStorage(STORAGE_KEYS.progress, DEFAULT_PROGRESS);
   const [memory, setMemory] = useLocalStorage(STORAGE_KEYS.memory, DEFAULT_MEMORY);
   const [lessons, setLessons] = useLocalStorage(STORAGE_KEYS.lessons, {});
+  const [badges, setBadges] = useLocalStorage(STORAGE_KEYS.badges, []);
+  const [examData, setExamData] = useState(null);
+  const [examLoading, setExamLoading] = useState(false);
   const [err, setErr] = useState('');
 
   useEffect(() => {
@@ -1490,6 +1636,7 @@ Exactly: 3-4 sections, 5 keyPoints, 3 resources, 5 quiz Qs, 6 flashcards.`
         history: [{ type: 'lesson_complete', id, title: lesson.title, journeyId: activeJourneyId, ts: Date.now() }, ...(m.history || [])].slice(0, 100),
       }));
     }
+    setTimeout(() => activateBadges(), 100);
   };
 
   const openArena = (cards, title) => {
@@ -1534,6 +1681,71 @@ Exactly: 3-4 sections, 5 keyPoints, 3 resources, 5 quiz Qs, 6 flashcards.`
 
   const switchJourney = (id) => {
     setActiveJourneyId(id); setSubview(null);
+  };
+
+  const activateBadges = () => {
+    const earned = badges.map(b => b.id);
+    const p = getProgress(activeJourneyId);
+    const newIds = checkNewBadges(p, progress, earned);
+
+    if (!earned.includes('module_master') && curriculum) {
+      for (const mod of curriculum.modules) {
+        if (mod.lessons.every(l => p.completed[l.id])) {
+          newIds.push('module_master');
+          break;
+        }
+      }
+    }
+    if (!earned.includes('pathfinder') && curriculum) {
+      if (curriculum.modules.every(m => m.lessons.every(l => p.completed[l.id]))) {
+        newIds.push('pathfinder');
+      }
+    }
+
+    if (newIds.length > 0) {
+      const newBadges = newIds.map(id => ({ id, earnedAt: Date.now() }));
+      setBadges(prev => [...prev, ...newBadges]);
+      if (newIds.length === 1) {
+        const b = BADGE_DEFS.find(x => x.id === newIds[0]);
+        setErr(`🏆 Badge unlocked: ${b?.label}!`);
+        setTimeout(() => setErr(''), 3000);
+      } else {
+        setErr(`🏆 ${newIds.length} new badges unlocked!`);
+        setTimeout(() => setErr(''), 3000);
+      }
+    }
+  };
+
+  const startExam = async () => {
+    if (!curriculum || !activeJourneyId) return;
+    const cacheKey = `${activeJourneyId}_exam`;
+    const cached = lessons[cacheKey];
+    if (cached) {
+      setExamData(cached); setExamLoading(false); setSubview('exam');
+      return;
+    }
+    setExamData(null); setExamLoading(true); setSubview('exam');
+    try {
+      const data = await callAI(
+        `Create a comprehensive final exam for the "${curriculum.title}" curriculum covering: ${curriculum.modules.map(m => m.title).join(', ')}.`,
+        `Expert examiner. Return ONLY JSON with a comprehensive exam:
+{"title":"${curriculum.title} Final Exam","questions":[{"question":"","options":["","","",""],"correct":<0-3>,"explanation":""}]}
+Exactly 10 questions covering all modules.`
+      );
+      const exam = { title: data.title || `${curriculum.title} Final Exam`, questions: data.questions || data.quiz || [] };
+      setExamData(exam);
+      setLessons(l => ({ ...l, [cacheKey]: exam }));
+    } catch {
+      setErr('Failed to generate exam. Please try again.');
+    }
+    setExamLoading(false);
+  };
+
+  const completeExam = (score, total) => {
+    if (!activeJourneyId) return;
+    const pct = Math.round((score / total) * 100);
+    setJourneyProgress(activeJourneyId, p => ({ ...p, xp: p.xp + score * 30, examPassed: pct >= 60 || p.examPassed }));
+    setTimeout(() => activateBadges(), 100);
   };
 
   const deleteJourney = (id) => {
@@ -1644,6 +1856,29 @@ Exactly: 3-4 sections, 5 keyPoints, 3 resources, 5 quiz Qs, 6 flashcards.`
             </motion.div>
           )}
 
+          {!generating && subview === 'exam' && (
+            <motion.div key="exam" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+              {examLoading ? (
+                <div style={{ minHeight: '100vh', background: t.bg, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 32, paddingTop: 'env(safe-area-inset-top, 0px)' }}>
+                  <motion.div animate={{ rotate: 360 }} transition={{ duration: 1.4, repeat: Infinity, ease: 'linear' }}
+                    style={{ width: 24, height: 24, borderRadius: '50%', border: `3px solid ${t.line}`, borderTopColor: t.primary, marginBottom: 20 }}/>
+                  <p style={{ fontFamily: ff.sans, fontSize: 14, color: t.muted }}>Generating final exam…</p>
+                </div>
+              ) : examData?.questions ? (
+                <QuizView
+                  quiz={examData.questions}
+                  lessonTitle={examData.title}
+                  onComplete={completeExam}
+                  onBack={() => setSubview(null)}
+                />
+              ) : (
+                <div style={{ minHeight: '100vh', background: t.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 32, paddingTop: 'env(safe-area-inset-top, 0px)' }}>
+                  <p style={{ fontFamily: ff.sans, fontSize: 14, color: t.muted }}>Exam data not available.</p>
+                </div>
+              )}
+            </motion.div>
+          )}
+
           {!generating && !subview && (
             <motion.div key="tabs" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
               {tab === 'gen' && <HomeView onGenerate={generate}/>}
@@ -1654,6 +1889,7 @@ Exactly: 3-4 sections, 5 keyPoints, 3 resources, 5 quiz Qs, 6 flashcards.`
                   curriculum={curriculum}
                   progress={getProgress(activeJourneyId)}
                   memory={memory}
+                  badges={badges}
                   onLesson={openLesson}
                   onArena={launchDailyArena}
                   onTab={setTab}
@@ -1666,10 +1902,14 @@ Exactly: 3-4 sections, 5 keyPoints, 3 resources, 5 quiz Qs, 6 flashcards.`
               )}
               {tab === 'tree' && (
                 <SkillTreeView
+                  journeys={journeys}
+                  activeJourneyId={activeJourneyId}
                   curriculum={curriculum}
                   progress={getProgress(activeJourneyId)}
                   onLesson={openLesson}
                   onTab={setTab}
+                  onSwitch={switchJourney}
+                  onStartExam={startExam}
                 />
               )}
             </motion.div>
