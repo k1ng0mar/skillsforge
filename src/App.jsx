@@ -11,9 +11,7 @@ const STORAGE_KEYS = {
   lessons: 'sf_lessons',
 };
 
-const API_BASE = typeof window !== 'undefined' && window.location.hostname !== 'localhost'
-  ? ''
-  : 'http://localhost:3001';
+const API_BASE = '';
 
 /* ─── SM-2 SPACED REPETITION ─── */
 function sm2(ease, interval, rep, rating) {
