@@ -14,7 +14,7 @@ app.post('/api/ai', async (req, res) => {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer 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`
+      'Authorization': `Bearer ${process.env.GROQ_API_KEY}`
     },
     body: JSON.stringify({
       model: 'llama-3.3-70b-versatile',
