@@ -15,29 +15,50 @@ app.post('/api/ai', async (req, res) => {
   const { prompt, system, model } = req.body;
 
   const MODEL_MAP = {
-    lesson:   'deepseek-chat',
-    code:     'codestral@latest',
-    curriculum: 'llama-3.3-70b-versatile',
-    exam:     'llama-3.3-70b-versatile',
+    lesson:   'tencent/hy3-preview',
+    code:     'mistral/codestral-2501',
+    curriculum: 'groq/llama-3.3-70b-versatile',
+    exam:     'groq/llama-3.3-70b-versatile',
   };
 
-  const resolvedModel = MODEL_MAP[model] || 'llama-3.3-70b-versatile';
+  const resolvedModel = MODEL_MAP[model] || MODEL_MAP.curriculum;
 
-  const res2 = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${process.env.GROQ_API_KEY}`
-    },
-    body: JSON.stringify({
-      model: resolvedModel,
-      response_format: { type: 'json_object' },
-      messages: [
-        { role: 'system', content: system + '\n\nCRITICAL: Respond with ONLY valid JSON. NO markdown. NO EMOJIS.' },
-        { role: 'user', content: prompt }
-      ],
-    }),
-  });
+  let res2;
+  if (resolvedModel.startsWith('groq/')) {
+    const actual = resolvedModel.replace('groq/', '');
+    res2 = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${process.env.GROQ_API_KEY}`
+      },
+      body: JSON.stringify({
+        model: actual,
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: system + '\n\nCRITICAL: Respond with ONLY valid JSON. NO markdown. NO EMOJIS.' },
+          { role: 'user', content: prompt }
+        ],
+      }),
+    });
+  } else {
+    res2 = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+        'HTTP-Referer': 'https://skillforge.app',
+        'X-Title': 'SkillForge',
+      },
+      body: JSON.stringify({
+        model: resolvedModel,
+        messages: [
+          { role: 'system', content: system },
+          { role: 'user', content: prompt }
+        ],
+      }),
+    });
+  }
 
   if (!res2.ok) {
     return res.status(res2.status).json({ error: `API Error: ${res2.status}` });

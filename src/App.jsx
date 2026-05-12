@@ -623,17 +623,31 @@ function JourneyView({ journeys, activeJourneyId, curriculum, progress, memory, 
         <div style={{ padding: 'calc(env(safe-area-inset-top, 0px) + 0px) 20px 12px', borderBottom: `1px solid ${t.line}`, marginBottom: 12 }}>
           <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 4 }}>
             {journeys.map(j => (
-              <button key={j.id} onClick={() => onSwitch(j.id)}
-                style={{
-                  flexShrink: 0, padding: '5px 12px', borderRadius: 999,
-                  fontFamily: ff.sans, fontSize: 12, fontWeight: j.id === activeJourneyId ? 600 : 400,
-                  background: j.id === activeJourneyId ? t.pDim : 'transparent',
-                  color: j.id === activeJourneyId ? t.primary : t.muted,
-                  border: `1px solid ${j.id === activeJourneyId ? t.pLine : t.line}`,
-                  transition: 'all 0.13s',
-                }}>
-                {j.curriculum?.title || j.skill}
-              </button>
+              <div key={j.id} style={{ flexShrink: 0, position: 'relative', display: 'flex', alignItems: 'center' }}>
+                <button onClick={() => onSwitch(j.id)}
+                  style={{
+                    padding: '5px 12px 5px 14px', borderRadius: 999,
+                    fontFamily: ff.sans, fontSize: 12, fontWeight: j.id === activeJourneyId ? 600 : 400,
+                    background: j.id === activeJourneyId ? t.pDim : 'transparent',
+                    color: j.id === activeJourneyId ? t.primary : t.muted,
+                    border: `1px solid ${j.id === activeJourneyId ? t.pLine : t.line}`,
+                    transition: 'all 0.13s',
+                  }}>
+                  {j.curriculum?.title || j.skill}
+                </button>
+                <button onClick={() => onDelete(j.id)}
+                  title="Delete journey"
+                  style={{
+                    position: 'absolute', top: -4, right: -4,
+                    width: 16, height: 16, borderRadius: '50%',
+                    background: t.danger, border: 'none',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    cursor: 'pointer', opacity: 0.8,
+                    fontSize: 10, color: '#fff', lineHeight: 1,
+                  }}>
+                  ×
+                </button>
+              </div>
             ))}
           </div>
         </div>
@@ -1168,7 +1182,7 @@ function SkillTreeView({ journeys, activeJourneyId, curriculum, progress, onLess
 }
 
 /* ─── LESSON ─── */
-function LessonView({ lessonData, loading, moduleTitle, lessonId, progress, onQuiz, onFlashcards, onComplete, onBack }) {
+function LessonView({ lessonData, loading, moduleTitle, lessonId, progress, onQuiz, onFlashcards, onComplete, onBack, onTutor }) {
   const { t, dark } = useT();
   const isDone = progress.completed[lessonId];
   const scrollRef = useRef();
@@ -1285,6 +1299,7 @@ function LessonView({ lessonData, loading, moduleTitle, lessonId, progress, onQu
         <div style={{ display: 'flex', gap: 9, flexWrap: 'wrap', marginBottom: 8 }}>
           <Btn v="outline" onClick={() => onQuiz(lessonData.quiz, lessonData.title)}>Quiz me</Btn>
           <Btn v="ghost" onClick={() => onFlashcards(lessonData.flashcards, lessonData.title)}>Flashcards</Btn>
+          <Btn v="ghost" onClick={onTutor}>Ask Tutor</Btn>
         </div>
       </div>
 
@@ -1631,6 +1646,128 @@ function ArenaView({ cards, lessonTitle, onBack, onDone }) {
   );
 }
 
+/* ─── TUTOR ─── */
+function TutorView({ lessonData, lessonTitle, moduleTitle, skill, curriculum, onBack }) {
+  const { t, dark } = useT();
+  const [messages, setMessages] = useState([]);
+  const [input, setInput] = useState('');
+  const [loading, setLoading] = useState(false);
+  const scrollRef = useRef();
+
+  useEffect(() => {
+    scrollRef.current?.scrollTo(0, scrollRef.current.scrollHeight);
+  }, [messages]);
+
+  const send = async () => {
+    const q = input.trim();
+    if (!q || loading) return;
+    const userMsg = { role: 'user', content: q };
+    const updated = [...messages, userMsg];
+    setMessages(updated);
+    setInput('');
+    setLoading(true);
+    try {
+      const lessonContext = lessonData ? `Current lesson: "${lessonTitle}" in ${moduleTitle} for "${skill}"
+Lesson content:
+${lessonData.sections?.map(s => `## ${s.heading}\n${s.content}`).join('\n\n') || ''}
+${lessonData.keyPoints ? `Key points: ${lessonData.keyPoints.join(', ')}` : ''}` : '';
+
+      const data = await callAI(
+        q,
+        `You are a world-class personal tutor. Be warm, precise, and rigorous.
+${lessonContext ? `CONTEXT — use this lesson content to inform your answer. You may reference, explain, and build upon it:\n${lessonContext}\n` : ''}
+${curriculum ? `COURSE CONTEXT — full curriculum for broader questions:\nTitle: ${curriculum.title}\nLevel: ${curriculum.level}\nModules: ${(curriculum.modules || []).map(m => `${m.title}: ${m.description}`).join(' | ')}\n` : ''}
+If a question is outside the lesson/course scope, answer from general knowledge.
+Be encouraging but honest. Use examples, analogies, and counterexamples.`
+      );
+      const tutorMsg = { role: 'assistant', content: data.content || data.response || JSON.stringify(data) };
+      setMessages(prev => [...prev, tutorMsg]);
+    } catch {
+      setMessages(prev => [...prev, { role: 'assistant', content: 'Sorry, I had trouble responding. Please try again.' }]);
+    }
+    setLoading(false);
+  };
+
+  return (
+    <div style={{ minHeight: '100vh', background: t.bg, display: 'flex', flexDirection: 'column', paddingTop: 'env(safe-area-inset-top, 0px)' }}>
+      {/* header */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: `1px solid ${t.line}`, background: dark ? 'rgba(9,10,12,0.92)' : 'rgba(244,242,236,0.92)', backdropFilter: 'blur(12px)' }}>
+        <button onClick={onBack} style={{ display: 'flex', alignItems: 'center', gap: 6, color: t.muted, fontFamily: ff.sans, fontSize: 13, fontWeight: 500 }}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
+        </button>
+        <div style={{ textAlign: 'center' }}>
+          <p style={{ fontFamily: ff.mono, fontSize: 10, color: t.muted, textTransform: 'uppercase', letterSpacing: 0.8 }}>AI Tutor</p>
+          <p style={{ fontFamily: ff.sans, fontSize: 12, color: t.primary, fontWeight: 600 }}>{lessonTitle}</p>
+        </div>
+        <div style={{ width: 16 }}/>
+      </div>
+
+      {/* messages */}
+      <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', padding: '20px 20px 12px' }}>
+        {messages.length === 0 && (
+          <div style={{ textAlign: 'center', marginTop: 32 }}>
+            <div style={{ fontSize: 36, marginBottom: 12 }}>📚</div>
+            <p style={{ fontFamily: ff.serif, fontSize: 18, fontWeight: 700, color: t.txt, marginBottom: 8 }}>Your personal tutor</p>
+            <p style={{ fontFamily: ff.sans, fontSize: 13, color: t.muted, lineHeight: 1.65, maxWidth: 280, margin: '0 auto' }}>
+              Ask anything about this lesson, the module, or the broader course. I can explain concepts, give examples, or quiz you.
+            </p>
+          </div>
+        )}
+        {messages.map((msg, i) => (
+          <div key={i} style={{ display: 'flex', justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start', marginBottom: 14 }}>
+            {msg.role === 'assistant' && (
+              <div style={{ width: 28, height: 28, borderRadius: '50%', background: t.pDim, border: `1px solid ${t.pLine}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginRight: 8, fontSize: 14 }}>
+                📖
+              </div>
+            )}
+            <div style={{ maxWidth: '75%', background: msg.role === 'user' ? t.primary : t.surface, color: msg.role === 'user' ? '#000' : t.txt, borderRadius: 16, padding: '12px 16px', fontFamily: ff.sans, fontSize: 14, lineHeight: 1.65, border: msg.role === 'user' ? 'none' : `1px solid ${t.line}` }}>
+              {msg.content.split('\n').map((line, j) => (
+                <p key={j} style={{ marginBottom: j < msg.content.split('\n').length - 1 ? 4 : 0 }}>{line}</p>
+              ))}
+            </div>
+          </div>
+        ))}
+        {loading && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+            <div style={{ width: 28, height: 28, borderRadius: '50%', background: t.pDim, border: `1px solid ${t.pLine}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginRight: 8, fontSize: 14 }}>📖</div>
+            <div style={{ background: t.surface, border: `1px solid ${t.line}`, borderRadius: 16, padding: '12px 16px' }}>
+              <motion.div animate={{ opacity: [0.4, 1, 0.4] }} transition={{ duration: 1, repeat: Infinity }}>
+                <span style={{ fontFamily: ff.sans, fontSize: 14, color: t.muted }}>Thinking…</span>
+              </motion.div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* input */}
+      <div style={{ padding: '12px 20px calc(env(safe-area-inset-bottom, 0px) + 16px)', borderTop: `1px solid ${t.line}`, background: dark ? 'rgba(9,10,12,0.95)' : 'rgba(244,242,236,0.95)', backdropFilter: 'blur(12px)' }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+          <textarea
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
+            placeholder="Ask about this lesson…"
+            rows={1}
+            style={{
+              flex: 1, background: t.bg, border: `1px solid ${t.lineMd}`,
+              borderRadius: 12, padding: '10px 14px',
+              fontFamily: ff.sans, fontSize: 14, color: t.txt,
+              resize: 'none', maxHeight: 120, overflowY: 'auto',
+            }}
+          />
+          <button onClick={send} disabled={!input.trim() || loading}
+            style={{ width: 42, height: 42, borderRadius: 12, background: input.trim() ? t.primary : t.surface, border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, cursor: input.trim() ? 'pointer' : 'default', opacity: input.trim() ? 1 : 0.4 }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill={input.trim() ? '#000' : t.muted}>
+              <path d="M2 21l21-9L2 3v7l15 2-15 2v7z"/>
+            </svg>
+          </button>
+        </div>
+        <p style={{ fontFamily: ff.sans, fontSize: 10, color: t.faint, marginTop: 6, textAlign: 'center' }}>Shift+Enter for new line · Enter to send</p>
+      </div>
+    </div>
+  );
+}
+
 /* ─── ROOT ─── */
 const DEFAULT_PROGRESS = { xp: 0, completed: {}, streak: 0, lastVisit: null };
 const DEFAULT_MEMORY = { cards: [], history: [] };
@@ -1668,6 +1805,7 @@ export default function App() {
   const [badges, setBadges] = useLocalStorage(STORAGE_KEYS.badges, []);
   const [examData, setExamData] = useState(null);
   const [examLoading, setExamLoading] = useState(false);
+  const [tutorActive, setTutorActive] = useState(false);
   const [err, setErr] = useState('');
 
   useEffect(() => {
@@ -1975,6 +2113,7 @@ Exactly 10 questions covering all modules.`
                 onFlashcards={openArena}
                 onComplete={complete}
                 onBack={() => setSubview(null)}
+                onTutor={() => setSubview('tutor')}
               />
             </motion.div>
           )}
@@ -1985,6 +2124,19 @@ Exactly 10 questions covering all modules.`
                 quiz={quizData.q}
                 lessonTitle={quizData.title}
                 onComplete={(s) => activeJourneyId && setJourneyProgress(activeJourneyId, p => ({ ...p, xp: p.xp + s * 20 }))}
+                onBack={() => setSubview('lesson')}
+              />
+            </motion.div>
+          )}
+
+          {!generating && subview === 'tutor' && (
+            <motion.div key="tutor" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+              <TutorView
+                lessonData={lessonData}
+                lessonTitle={activeLesson?.title || lessonData?.title}
+                moduleTitle={activeMod?.title}
+                skill={skill}
+                curriculum={curriculum}
                 onBack={() => setSubview('lesson')}
               />
             </motion.div>
