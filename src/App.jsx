@@ -1010,9 +1010,10 @@ function SkillTreeView({ journeys, activeJourneyId, curriculum, progress, onLess
                 position: 'fixed', bottom: 0,
                 left: '50%', transform: 'translateX(-50%)',
                 width: 'min(100%, 430px)',
+                maxHeight: '80vh', overflowY: 'auto',
                 background: t.surface,
                 borderRadius: '20px 20px 0 0',
-                padding: '12px 24px 48px',
+                padding: '12px 24px calc(env(safe-area-inset-bottom, 0px) + 24px)',
                 zIndex: 301,
               }}
             >
