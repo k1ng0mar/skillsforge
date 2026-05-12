@@ -1,5 +1,6 @@
-import { useState, useEffect, useRef, createContext, useContext } from "react";
+import { useState, useEffect, useRef, createContext, useContext, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useUser, useAuth } from '@clerk/clerk-react';
 
 /* ─── PERSISTENCE ─── */
 const STORAGE_KEYS = {
@@ -49,11 +50,22 @@ function loadStorage(key, fallback) {
   try {
     const raw = localStorage.getItem(key);
     return raw ? JSON.parse(raw) : fallback;
-  } catch { return fallback; }
+  } catch (e) {
+    if (e.name === 'QuotaExceededError') {
+      console.error('localStorage quota exceeded — clearing oldest lessons');
+      const keys = Object.keys(localStorage).filter(k => k.startsWith('sf_'));
+      for (const k of keys) { try { localStorage.removeItem(k); break; } catch {} }
+    }
+    return fallback;
+  }
 }
 
 function saveStorage(key, val) {
-  try { localStorage.setItem(key, JSON.stringify(val)); } catch {}
+  try { localStorage.setItem(key, JSON.stringify(val)); } catch (e) {
+    if (e.name === 'QuotaExceededError') {
+      console.error('localStorage quota exceeded');
+    }
+  }
 }
 
 function useLocalStorage(key, fallback) {
@@ -395,16 +407,40 @@ function HomeView({ onGenerate }) {
         <span style={{ fontFamily: ff.serif, fontSize: 18, fontWeight: 700, color: t.txt, letterSpacing: '-0.3px' }}>
           SkillsForge
         </span>
-        <button onClick={toggle} style={{
-          width: 34, height: 34, borderRadius: 8,
-          background: t.surface, border: `1px solid ${t.line}`,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          color: t.muted, fontSize: 15,
-        }}>
-          {dark ? '○' : '●'}
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {syncStatus === 'syncing' && (
+            <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
+              style={{ width: 14, height: 14, borderRadius: '50%', border: `2px solid ${t.line}`, borderTopColor: t.primary }}/>
+          )}
+          {syncStatus === 'synced' && (
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={t.success} strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+          )}
+          {syncStatus === 'error' && (
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={t.danger} strokeWidth="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          )}
+          <button onClick={toggle}
+            style={{ width: 30, height: 30, borderRadius: 7, background: t.surface, border: `1px solid ${t.line}`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: t.muted, fontSize: 13 }}>
+            {dark ? '○' : '●'}
+          </button>
+          {!isSignedIn ? (
+            <button
+              onClick={() => window.location.href = '/api/auth/sign-in'}
+              style={{ fontFamily: ff.sans, fontSize: 12, color: t.primary, fontWeight: 600, padding: '4px 10px', borderRadius: 999, border: `1px solid ${t.pLine}`, background: t.pDim }}>
+              Sign In
+            </button>
+          ) : (
+            <div style={{ width: 28, height: 28, borderRadius: '50%', background: t.primary, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+              {user?.imageUrl ? (
+                <img src={user.imageUrl} alt="avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }}/>
+              ) : (
+                <span style={{ fontFamily: ff.sans, fontSize: 11, fontWeight: 700, color: '#000' }}>
+                  {(user?.firstName?.[0] || user?.emailAddresses?.[0]?.emailAddress?.[0] || 'U').toUpperCase()}
+                </span>
+              )}
+            </div>
+          )}
+        </div>
       </div>
-
       <div style={{ flex: 1, padding: '28px 24px 0' }}>
         <motion.h1
           initial={{ opacity: 0, y: 16 }}
@@ -1104,7 +1140,7 @@ function SkillTreeView({ journeys, activeJourneyId, curriculum, progress, onLess
                 </div>
                 <div style={{ background: t.bg, border: `1px solid ${t.line}`, borderRadius: 12, padding: '12px 14px' }}>
                   <p style={{ fontFamily: ff.mono, fontSize: 9, color: t.muted, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 5 }}>Contains</p>
-                  <p style={{ fontFamily: ff.serif, fontSize: 22, fontWeight: 700, color: t.txt }}>6 Cards</p>
+                  <p style={{ fontFamily: ff.serif, fontSize: 22, fontWeight: 700, color: t.txt }}>{sheet.node.flashcards || 6} Cards</p>
                 </div>
               </div>
               <Btn v="primary" full
@@ -1229,7 +1265,7 @@ function LessonView({ lessonData, loading, moduleTitle, lessonId, progress, onQu
         backdropFilter: 'blur(12px)',
         borderBottom: `1px solid ${t.line}`,
       }}>
-        <button onClick={onBack}
+        <button onClick={onBack} aria-label="Go back"
           style={{ display: 'flex', alignItems: 'center', gap: 6, color: t.muted, fontFamily: ff.sans, fontSize: 13, fontWeight: 500 }}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
             <path d="M19 12H5M12 5l-7 7 7 7"/>
@@ -1777,12 +1813,11 @@ export default function App() {
   const t = dark ? DARK : LIGHT;
   const ctx = {
     t, dark,
-    toggle: () => setDark(d => {
-      const next = !d;
-      saveStorage(STORAGE_KEYS.dark, next);
-      return next;
-    }),
+    toggle: toggleDark,
   };
+
+  const { userId, getToken, isSignedIn } = useAuth();
+  const { user } = useUser();
 
   const [tab, setTab] = useState('gen');
   const [subview, setSubview] = useState(null);
@@ -1806,7 +1841,61 @@ export default function App() {
   const [examData, setExamData] = useState(null);
   const [examLoading, setExamLoading] = useState(false);
   const [tutorActive, setTutorActive] = useState(false);
+  const [syncStatus, setSyncStatus] = useState('idle');
+  const [lastSync, setLastSync] = useState(0);
+  const syncInFlight = useRef(false);
   const [err, setErr] = useState('');
+
+  const pushSync = useCallback(async () => {
+    if (!isSignedIn || syncInFlight.current) return;
+    syncInFlight.current = true;
+    setSyncStatus('syncing');
+    try {
+      const token = await getToken();
+      const res = await fetch('/api/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ journeys, progress, memory, lessons, badges, dark, localUpdated: lastSync }),
+      });
+      if (!res.ok) throw new Error(res.status);
+      const result = await res.json();
+      if (result.source === 'cloud') {
+        if (result.data.journeys) setJourneys(result.data.journeys);
+        if (result.data.progress) setProgress(p => ({ ...p, ...result.data.progress }));
+        if (result.data.memory) setMemory(result.data.memory);
+        if (result.data.lessons) setLessons(result.data.lessons);
+        if (result.data.badges) setBadges(result.data.badges);
+        if (result.data.dark !== undefined) { setDark(result.data.dark); saveStorage(STORAGE_KEYS.dark, result.data.dark); }
+      }
+      setLastSync(Date.now());
+      setSyncStatus('synced');
+    } catch {
+      setSyncStatus('error');
+    } finally {
+      syncInFlight.current = false;
+      setTimeout(() => setSyncStatus('idle'), 3000);
+    }
+  }, [isSignedIn, getToken, journeys, progress, memory, lessons, badges, dark, lastSync]);
+
+  useEffect(() => {
+    if (isSignedIn) pushSync();
+  }, [isSignedIn]);
+
+  const wrapSync = (updater) => {
+    const result = updater();
+    if (result instanceof Promise) {
+      return result.then(() => { if (isSignedIn) pushSync(); });
+    } else {
+      if (isSignedIn) pushSync();
+    }
+    return result;
+  };
+
+  const toggleDark = () => wrapSync(() => {
+    const next = !dark;
+    saveStorage(STORAGE_KEYS.dark, next);
+    setDark(next);
+  });
 
   useEffect(() => {
     if (!activeJourneyId && journeys.length > 0) {
@@ -1840,7 +1929,7 @@ CRITICAL: ${cfg.contentHint}`
       );
       const jid = `j_${Date.now()}`;
       const journey = { id: jid, skill: skillName, scope, curriculum: data, createdAt: Date.now() };
-      setJourneys(prev => [...prev, journey]);
+      wrapSync(() => setJourneys(prev => [...prev, journey]));
       setActiveJourneyId(jid);
       setTab('journey');
     } catch {
@@ -1871,7 +1960,7 @@ For code/programming: include algorithm analysis (time + space complexity), comp
 5 keyPoints, 3 resources, 5 quiz Qs (mix of conceptual and application), 6 flashcards.`, 'auto', skill
       );
       setLessonData(data);
-      setLessons(l => ({ ...l, [cacheKey]: data }));
+      wrapSync(() => setLessons(l => ({ ...l, [cacheKey]: data })));
     } catch {
       setErr('Failed to load lesson. Please try again.');
     }
@@ -1893,7 +1982,7 @@ ${curriculum?.scope === 'Mastery' ? `MASTERY — university level. Every concept
 For code topics: include full implementation with explanations, complexity analysis, and test cases.
 5 keyPoints, 3 resources, 5 quiz Qs, 6 flashcards.`, 'auto', skill
       );
-      setLessons(l => ({ ...l, [cacheKey]: data }));
+      wrapSync(() => setLessons(l => ({ ...l, [cacheKey]: data })));
       setLessonData(data);
       return true;
     } catch {
@@ -1902,19 +1991,33 @@ For code topics: include full implementation with explanations, complexity analy
     }
   };
 
-  const complete = (id) => {
+  const MS_PER_DAY = 86400000;
+const XP_PER_LESSON = 50;
+const XP_PER_ARENA = 20;
+const HISTORY_LIMIT = 100;
+
+const complete = (id) => {
     if (!activeJourneyId) return;
     const lesson = curriculum?.modules?.flatMap(m => m.lessons)?.find(l => l.id === id);
     const modTitle = curriculum?.modules?.find(m => m.lessons?.some(l => l.id === id))?.title;
-    setJourneyProgress(activeJourneyId, p => ({
-      ...p, completed: { ...p.completed, [id]: true }, xp: p.xp + 50, streak: p.streak + 1, lastVisit: Date.now(),
-    }));
+    setJourneyProgress(activeJourneyId, p => {
+      const now = Date.now();
+      const lastVisit = p.lastVisit || 0;
+      const daysSince = lastVisit ? (now - lastVisit) / MS_PER_DAY : Infinity;
+      const brokenStreak = daysSince > 1;
+      return {
+        ...p, completed: { ...p.completed, [id]: true },
+        xp: p.xp + XP_PER_LESSON,
+        streak: brokenStreak ? 1 : (p.streak || 0) + 1,
+        lastVisit: now,
+      };
+    });
     if (lesson) {
-      setMemory(m => ({
+      wrapSync(() => setMemory(m => ({
         ...m,
-        cards: [...(m.cards || []).filter(c => c.lessonId !== id), { lessonId: id, title: lesson.title, module: modTitle, journeyId: activeJourneyId, learnedAt: Date.now(), nextReview: Date.now() + 86400000, interval: 1, rep: 0, ease: 2.5 }],
-        history: [{ type: 'lesson_complete', id, title: lesson.title, journeyId: activeJourneyId, ts: Date.now() }, ...(m.history || [])].slice(0, 100),
-      }));
+        cards: [...(m.cards || []).filter(c => c.lessonId !== id), { lessonId: id, title: lesson.title, module: modTitle, journeyId: activeJourneyId, learnedAt: Date.now(), nextReview: Date.now() + MS_PER_DAY, interval: 1, rep: 0, ease: 2.5 }],
+        history: [{ type: 'lesson_complete', id, title: lesson.title, journeyId: activeJourneyId, ts: Date.now() }, ...(m.history || [])].slice(0, HISTORY_LIMIT),
+      })));
     }
     setTimeout(() => activateBadges(), 100);
   };
@@ -1925,9 +2028,9 @@ For code topics: include full implementation with explanations, complexity analy
 
   const arenaDone = (ratings, ratedCards) => {
     if (!activeJourneyId) return;
-    setJourneyProgress(activeJourneyId, p => ({ ...p, xp: p.xp + 20 }));
+    setJourneyProgress(activeJourneyId, p => ({ ...p, xp: p.xp + XP_PER_ARENA }));
     if (ratedCards && ratedCards.length > 0) {
-      setMemory(m => {
+      wrapSync(() => setMemory(m => {
         const ratingMap = {};
         ratedCards.forEach(rc => { ratingMap[rc.lessonId || rc.id] = rc.rating; });
         const updatedCards = (m.cards || []).map(c => {
@@ -1938,9 +2041,9 @@ For code topics: include full implementation with explanations, complexity analy
           return { ...c, ease, interval, rep, nextReview: Date.now() + interval * 86400000 };
         });
         return { ...m, cards: updatedCards, history: [{ type: 'arena_done', title: arenaTitle, ts: Date.now() }, ...(m.history || [])].slice(0, 100) };
-      });
+      }));
     } else {
-      setMemory(m => ({ ...m, history: [{ type: 'arena_done', title: arenaTitle, ts: Date.now() }, ...(m.history || [])].slice(0, 100) }));
+      wrapSync(() => setMemory(m => ({ ...m, history: [{ type: 'arena_done', title: arenaTitle, ts: Date.now() }, ...(m.history || [])].slice(0, 100) })));
     }
   };
 
@@ -1986,7 +2089,7 @@ For code topics: include full implementation with explanations, complexity analy
 
     if (newIds.length > 0) {
       const newBadges = newIds.map(id => ({ id, earnedAt: Date.now() }));
-      setBadges(prev => [...prev, ...newBadges]);
+      wrapSync(() => setBadges(prev => [...prev, ...newBadges]));
       if (newIds.length === 1) {
         const b = BADGE_DEFS.find(x => x.id === newIds[0]);
         setErr(`🏆 Badge unlocked: ${b?.label}!`);
@@ -2016,7 +2119,7 @@ Exactly 10 questions covering all modules.`
       );
       const exam = { title: data.title || `${curriculum.title} Final Exam`, questions: data.questions || data.quiz || [] };
       setExamData(exam);
-      setLessons(l => ({ ...l, [cacheKey]: exam }));
+      wrapSync(() => setLessons(l => ({ ...l, [cacheKey]: exam })));
     } catch {
       setErr('Failed to generate exam. Please try again.');
     }
@@ -2031,9 +2134,9 @@ Exactly 10 questions covering all modules.`
   };
 
   const deleteJourney = (id) => {
-    setJourneys(prev => prev.filter(j => j.id !== id));
-    setProgress(p => { const n = { ...p }; delete n[id]; return n; });
-    setMemory(m => ({ ...m, cards: (m.cards || []).filter(c => c.journeyId !== id), history: (m.history || []).filter(h => h.journeyId !== id) }));
+    wrapSync(() => setJourneys(prev => prev.filter(j => j.id !== id)));
+    wrapSync(() => setProgress(p => { const n = { ...p }; delete n[id]; return n; }));
+    wrapSync(() => setMemory(m => ({ ...m, cards: (m.cards || []).filter(c => c.journeyId !== id), history: (m.history || []).filter(h => h.journeyId !== id) })));
     if (activeJourneyId === id) {
       const remaining = journeys.filter(j => j.id !== id);
       setActiveJourneyId(remaining.length > 0 ? remaining[0].id : null);
@@ -2054,12 +2157,12 @@ Exactly 10 questions covering all modules.`
     reader.onload = (e) => {
       try {
         const data = JSON.parse(e.target.result);
-        if (data.journeys) setJourneys(data.journeys);
-        if (data.progress) setProgress(p => ({ ...p, ...data.progress }));
-        if (data.memory) setMemory(data.memory);
-        if (data.lessons) setLessons(data.lessons);
-        if (data.badges) setBadges(data.badges);
-        if (typeof data.dark === 'boolean') { setDark(data.dark); saveStorage(STORAGE_KEYS.dark, data.dark); }
+        if (data.journeys) wrapSync(() => setJourneys(data.journeys));
+        if (data.progress) wrapSync(() => setProgress(p => ({ ...p, ...data.progress })));
+        if (data.memory) wrapSync(() => setMemory(data.memory));
+        if (data.lessons) wrapSync(() => setLessons(data.lessons));
+        if (data.badges) wrapSync(() => setBadges(data.badges));
+        if (typeof data.dark === 'boolean') { wrapSync(() => setDark(data.dark)); saveStorage(STORAGE_KEYS.dark, data.dark); }
         setErr('');
       } catch { setErr('Failed to import data. Invalid file format.'); }
     };
@@ -2123,7 +2226,7 @@ Exactly 10 questions covering all modules.`
               <QuizView
                 quiz={quizData.q}
                 lessonTitle={quizData.title}
-                onComplete={(s) => activeJourneyId && setJourneyProgress(activeJourneyId, p => ({ ...p, xp: p.xp + s * 20 }))}
+                onComplete={(s) => activeJourneyId && setJourneyProgress(activeJourneyId, p => ({ ...p, xp: p.xp + s * XP_PER_LESSON }))}
                 onBack={() => setSubview('lesson')}
               />
             </motion.div>
