@@ -109,11 +109,60 @@ const Ctx = createContext(null);
 const useT = () => useContext(Ctx);
 
 /* ─── AI ─── */
-async function callAI(prompt, sys) {
+const CODE_KEYWORDS = new Set([
+  'python', 'javascript', 'typescript', 'java', 'c++', 'c#', 'rust', 'go', 'golang',
+  'swift', 'kotlin', 'ruby', 'php', 'sql', 'html', 'css', 'react', 'vue', 'angular',
+  'node', 'django', 'flask', 'spring', 'rails', 'laravel', 'nextjs', 'next.js',
+  'api', 'backend', 'frontend', 'fullstack', 'full-stack', 'web dev', 'web development',
+  'algorithm', 'data structure', 'dsa', 'competitive programming', 'coding',
+  'programming', 'software', 'machine learning', 'ml', 'deep learning', 'ai',
+  'data science', 'pandas', 'numpy', 'tensorflow', 'pytorch', 'keras', 'scikit',
+  'database', 'mongodb', 'postgresql', 'redis', 'graphql', 'rest api', 'docker',
+  'kubernetes', 'devops', 'cloud', 'aws', 'azure', 'gcp', 'firebase', 'linux',
+  'bash', 'shell', 'scripting', 'automation', 'CI/CD', 'git', 'github',
+]);
+
+function isCodeRelated(skillName, lessonTitle = '') {
+  const combined = `${skillName} ${lessonTitle}`.toLowerCase();
+  return [...CODE_KEYWORDS].some(k => combined.includes(k));
+}
+
+const SCOPE_CONFIG = {
+  'Crash Course': {
+    modDesc: '3-4 modules.',
+    lesDesc: '2-3 concise lessons per module covering the essential core only. Lesson titles are short and broad.',
+    contentHint: 'Provide a 80-word overview section with essential concepts and one worked example.',
+    lesWordCount: 80,
+    numSections: 2,
+  },
+  'Standard': {
+    modDesc: '4-5 modules.',
+    lesDesc: '3-4 lessons per module. Each lesson has: overview, two detailed sections (~140 words each), key takeaways, example.',
+    contentHint: 'Include conceptual explanations, one detailed example, and brief practical application.',
+    lesWordCount: 140,
+    numSections: 3,
+  },
+  'Mastery': {
+    modDesc: '8-12 modules.',
+    lesDesc: '6-8 granular lessons per module. Lesson titles are precise and specific (e.g. "Gradient Descent: Line Search Methods" not "Optimization"). Every lesson must be independently comprehensive.',
+    contentHint: `Each lesson must stand alone as a complete, university-level lecture. Cover EVERYTHING — history, motivation, formal definitions, edge cases, counterexamples, and real-world applications.
+For STEM/math/physics: MUST include formal notation, complete derivations step-by-step, multiple solved examples at varying difficulty, common student misconceptions and how to avoid them, prerequisite knowledge connections.
+For code/programming: MUST include algorithm analysis (time/space complexity), complete working implementation with line-by-line explanation, test cases, common pitfalls and how to fix them, performance tradeoffs, real-world usage patterns.
+Every word of every section must contain NEW information — never repeat what was said before.`,
+    lesWordCount: 300,
+    numSections: 5,
+  },
+};
+
+async function callAI(prompt, sys, modelHint = 'curriculum', skillName = '') {
+  let model = modelHint;
+  if (modelHint === 'auto') {
+    model = isCodeRelated(skillName, prompt.slice(0, 250)) ? 'code' : 'lesson';
+  }
   const r = await fetch(`${API_BASE}/api/ai`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ prompt, system: sys + "\n\nReturn ONLY valid JSON. No markdown fences, no preamble." }),
+    body: JSON.stringify({ prompt, system: sys + "\n\nReturn ONLY valid JSON. No markdown fences, no preamble.", model }),
   });
 
   if (!r.ok) throw new Error(r.status);
@@ -1642,17 +1691,14 @@ export default function App() {
 
   const generate = async (skillName, scope) => {
     setSkill(skillName); setErr(''); setGenerating(true);
-    const depth = {
-      'Crash Course': '2-3 modules, 2-3 lessons each.',
-      'Standard': '4-5 modules, 3-4 lessons each.',
-      'Mastery': '6-7 modules, 4-5 lessons each.',
-    }[scope] || '4-5 modules, 3-4 lessons each.';
+    const cfg = SCOPE_CONFIG[scope] || SCOPE_CONFIG['Standard'];
     try {
       const data = await callAI(
         `Create a curriculum for: "${skillName}"`,
         `World-class curriculum designer. Return ONLY JSON:
 {"title":"","description":"2 sentences","estimatedHours":<n>,"level":"Beginner|Intermediate|Advanced","modules":[{"id":"m1","title":"","description":"1 sentence","icon":"<emoji>","estimatedHours":<n>,"lessons":[{"id":"m1l1","title":"","duration":"X min","type":"core|practice|project"}]}]}
-Use ${depth}`
+MANDATORY: ${cfg.modDesc} ${cfg.lesDesc}
+CRITICAL: ${cfg.contentHint}`
       );
       const jid = `j_${Date.now()}`;
       const journey = { id: jid, skill: skillName, scope, curriculum: data, createdAt: Date.now() };
@@ -1674,12 +1720,17 @@ Use ${depth}`
       return;
     }
     setLessonData(null); setLessonLoading(true); setSubview('lesson');
+    const cfg = SCOPE_CONFIG[curriculum?.scope] || SCOPE_CONFIG['Standard'];
     try {
       const data = await callAI(
         `Write a detailed lesson: "${lesson.title}" in "${mod.title}" for a "${skill}" course.`,
-        `Expert educator. Return ONLY JSON:
-{"title":"","summary":"2 sentences","sections":[{"heading":"","content":"140-word paragraph"}],"keyPoints":["x5"],"resources":[{"title":"","description":"1 sentence","icon":"<emoji>"}],"quiz":[{"question":"","options":["","","",""],"correct":<0-3>,"explanation":""}],"flashcards":[{"front":"term","back":"definition"}]}
-Exactly: 3-4 sections, 5 keyPoints, 3 resources, 5 quiz Qs, 6 flashcards.`
+        `Expert university-level educator. Return ONLY JSON:
+{"title":"","summary":"2 sentences","sections":[{"heading":"","content":"<n>-word paragraph"}],"keyPoints":["x5"],"resources":[{"title":"","description":"1 sentence","icon":"<emoji>"}],"quiz":[{"question":"","options":["","","",""],"correct":<0-3>,"explanation":""}],"flashcards":[{"front":"term","back":"definition"}]}
+MUST contain ${cfg.numSections} sections. Each section MUST be ${cfg.lesWordCount} words minimum — NO shorter, NO fluff.
+${scope === 'Mastery' ? `MASTERY LEVEL — NO STONE LEFT UNTURNED. This must read like a top-tier university lecture. Cover: historical context and motivation, formal definitions with notation, complete derivations step-by-step, multiple solved examples at increasing difficulty, common misconceptions with corrections, prerequisite knowledge links, edge cases, real-world applications, and performance/accuracy tradeoffs. Every section must contain entirely new information — zero repetition across sections.` : scope === 'Standard' ? `Provide thorough explanations, one detailed worked example, conceptual depth, and brief practical application.` : `Provide a concise overview with essential concepts and one clear worked example.`}
+For STEM/math/physics: include formal mathematical notation, complete derivations, at least 2 worked examples (one basic, one advanced), and common student misconceptions.
+For code/programming: include algorithm analysis (time + space complexity), complete working implementation with line-by-line comment explanations, test cases, performance tradeoffs, and real-world usage patterns.
+5 keyPoints, 3 resources, 5 quiz Qs (mix of conceptual and application), 6 flashcards.`, 'auto', skill
       );
       setLessonData(data);
       setLessons(l => ({ ...l, [cacheKey]: data }));
@@ -1691,15 +1742,18 @@ Exactly: 3-4 sections, 5 keyPoints, 3 resources, 5 quiz Qs, 6 flashcards.`
 
   const regenerateLesson = async (mod, lesson, instructions) => {
     const cacheKey = `${activeJourneyId}_${lesson.id}`;
+    const cfg = SCOPE_CONFIG[curriculum?.scope] || SCOPE_CONFIG['Standard'];
     try {
       const data = await callAI(
-        `Rewrite the lesson "${lesson.title}" in "${mod.title}" for the "${skill}" course.
+        `Rewrite "${lesson.title}" in "${mod.title}" for "${skill}" course.
 Custom instructions: "${instructions}"
-
-Keep the same title and structure but adapt the content per the instructions above.`,
-        `Expert educator. Return ONLY JSON with the adapted lesson:
-{"title":"${lesson.title}","summary":"2 sentences reflecting the custom adaptation","sections":[{"heading":"","content":"140-word paragraph"}],"keyPoints":["x5"],"resources":[{"title":"","description":"1 sentence","icon":"<emoji>"}],"quiz":[{"question":"","options":["","","",""],"correct":<0-3>,"explanation":""}],"flashcards":[{"front":"term","back":"definition"}]}
-Exactly: 3-4 sections, 5 keyPoints, 3 resources, 5 quiz Qs, 6 flashcards.`
+This is a ${curriculum?.scope || 'Standard'} level lesson.`,
+        `Expert university-level educator. Return ONLY JSON with the adapted lesson:
+{"title":"${lesson.title}","summary":"2 sentences reflecting the custom adaptation","sections":[{"heading":"","content":"<n>-word paragraph"}],"keyPoints":["x5"],"resources":[{"title":"","description":"1 sentence","icon":"<emoji>"}],"quiz":[{"question":"","options":["","","",""],"correct":<0-3>,"explanation":""}],"flashcards":[{"front":"term","back":"definition"}]}
+MUST contain ${cfg.numSections} sections. Each section MUST be ${cfg.lesWordCount} words minimum.
+${curriculum?.scope === 'Mastery' ? `MASTERY — university level. Every concept must be developed from first principles, with complete derivations, multiple difficulty-tiered examples, misconceptions addressed, and real-world context. No repetition, no padding.` : `Thorough but accessible. Apply the custom instructions throughout while maintaining quality.`}
+For code topics: include full implementation with explanations, complexity analysis, and test cases.
+5 keyPoints, 3 resources, 5 quiz Qs, 6 flashcards.`, 'auto', skill
       );
       setLessons(l => ({ ...l, [cacheKey]: data }));
       setLessonData(data);

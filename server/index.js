@@ -12,7 +12,16 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, '..', 'dist')));
 
 app.post('/api/ai', async (req, res) => {
-  const { prompt, system } = req.body;
+  const { prompt, system, model } = req.body;
+
+  const MODEL_MAP = {
+    lesson:   'deepseek-chat',
+    code:     'codestral@latest',
+    curriculum: 'llama-3.3-70b-versatile',
+    exam:     'llama-3.3-70b-versatile',
+  };
+
+  const resolvedModel = MODEL_MAP[model] || 'llama-3.3-70b-versatile';
 
   const res2 = await fetch('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
@@ -21,7 +30,7 @@ app.post('/api/ai', async (req, res) => {
       'Authorization': `Bearer ${process.env.GROQ_API_KEY}`
     },
     body: JSON.stringify({
-      model: 'llama-3.3-70b-versatile',
+      model: resolvedModel,
       response_format: { type: 'json_object' },
       messages: [
         { role: 'system', content: system + '\n\nCRITICAL: Respond with ONLY valid JSON. NO markdown. NO EMOJIS.' },
