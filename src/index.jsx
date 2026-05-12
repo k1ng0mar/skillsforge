@@ -13,10 +13,18 @@ const updateSW = registerSW({
   },
 })
 
+const clerkKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY
+
+const Root = clerkKey
+  ? (
+    <ClerkProvider publishableKey={clerkKey}>
+      <App clerkAuth={true} />
+    </ClerkProvider>
+  )
+  : <App clerkAuth={false} />
+
 ReactDOM.createRoot(document.getElementById('root')).render(
-	<React.StrictMode>
-		<ClerkProvider publishableKey={import.meta.env.VITE_CLERK_PUBLISHABLE_KEY}>
-			<App />
-		</ClerkProvider>
-	</React.StrictMode>
+  <React.StrictMode>
+    {Root}
+  </React.StrictMode>
 )

@@ -1808,16 +1808,33 @@ Be encouraging but honest. Use examples, analogies, and counterexamples.`
 const DEFAULT_PROGRESS = { xp: 0, completed: {}, streak: 0, lastVisit: null };
 const DEFAULT_MEMORY = { cards: [], history: [] };
 
-export default function App() {
+function AuthShell({ children }) {
+  const { userId, getToken, isSignedIn } = useAuth();
+  const { user } = useUser();
+  return children({ userId, getToken, isSignedIn, user });
+}
+
+export default function App({ clerkAuth }) {
+  if (clerkAuth) {
+    return (
+      <AuthShell>
+        {({ userId, getToken, isSignedIn, user }) => (
+          <AppInner userId={userId} getToken={getToken} isSignedIn={isSignedIn} user={user} />
+        )}
+      </AuthShell>
+    );
+  }
+  return <AppInner userId={null} getToken={null} isSignedIn={false} user={null} />;
+}
+
+function AppInner({ userId, getToken, isSignedIn, user }) {
   const [dark, setDark] = useState(() => loadStorage(STORAGE_KEYS.dark, true));
   const t = dark ? DARK : LIGHT;
   const ctx = {
-    t, dark,
-    toggle: toggleDark,
+    get t() { return t; },
+    get dark() { return dark; },
+    get toggle() { return toggleDark; },
   };
-
-  const { userId, getToken, isSignedIn } = useAuth();
-  const { user } = useUser();
 
   const [tab, setTab] = useState('gen');
   const [subview, setSubview] = useState(null);
