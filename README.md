@@ -6,6 +6,7 @@ AI-powered custom curriculum generator with spaced repetition learning.
 
 - **AI Curriculum Generation** — Describe what you want to learn, get a custom curriculum with modules and lessons
 - **Skill Tree** — Visual neural pathway showing your learning progress
+- **Lesson Regeneration** — Regenerate any lesson with custom difficulty/pacing instructions directly from the Skill Tree; completed lessons are unaffected
 - **Spaced Repetition (SM-2)** — Flashcard arena that adapts review intervals based on your ratings
 - **Multiple Journeys** — Track several learning paths at once; switch between them from Journey or Skill Tree views
 - **Final Exams** — Comprehensive curriculum-wide exam unlocked when all lessons are completed

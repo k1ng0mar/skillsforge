@@ -795,9 +795,13 @@ function JourneyView({ journeys, activeJourneyId, curriculum, progress, memory, 
 }
 
 /* ─── SKILL TREE ─── */
-function SkillTreeView({ journeys, activeJourneyId, curriculum, progress, onLesson, onTab, onSwitch, onStartExam }) {
+function SkillTreeView({ journeys, activeJourneyId, curriculum, progress, onLesson, onTab, onSwitch, onStartExam, onRegenerate }) {
   const { t, dark } = useT();
-  const [sheet, setSheet] = useState(null); // { mod, lesson, done, active }
+  const [sheet, setSheet] = useState(null);
+  const [regenerateOpen, setRegenerateOpen] = useState(false);
+  const [regenerateInstructions, setRegenerateInstructions] = useState('');
+  const [regenerating, setRegenerating] = useState(false);
+  const [regenerated, setRegenerated] = useState(false);
 
   if (!curriculum) {
     return <Empty msg="No curriculum yet." action="Generate one" onAction={() => onTab('gen')}/>;
@@ -994,9 +998,9 @@ function SkillTreeView({ journeys, activeJourneyId, curriculum, progress, onLess
       <AnimatePresence>
         {sheet && (
           <>
-            <motion.div
-              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              onClick={() => setSheet(null)}
+              <motion.div
+                initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                onClick={() => { setSheet(null); setRegenerateOpen(false); setRegenerated(false); setRegenerateInstructions(''); }}
               style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 300 }}
             />
             <motion.div
@@ -1040,10 +1044,71 @@ function SkillTreeView({ journeys, activeJourneyId, curriculum, progress, onLess
                 </div>
               </div>
               <Btn v="primary" full
-                onClick={() => { setSheet(null); onLesson(sheet.node.modObj, sheet.node); }}
-                style={{ height: 52, borderRadius: 999, letterSpacing: 1 }}>
+                onClick={() => { setSheet(null); setRegenerateOpen(false); setRegenerated(false); setRegenerateInstructions(''); onLesson(sheet.node.modObj, sheet.node); }}
+                style={{ height: 52, borderRadius: 999, letterSpacing: 1, marginBottom: 8 }}>
                 {sheet.done ? 'REVIEW LESSON' : 'ENTER ARENA'} →
               </Btn>
+
+              {!regenerateOpen && !regenerated && (
+                <Btn v="ghost" full onClick={() => setRegenerateOpen(true)}
+                  style={{ letterSpacing: 0.5, fontSize: 12 }}>
+                  Regenerate with custom instructions
+                </Btn>
+              )}
+
+              {regenerateOpen && !regenerating && (
+                <div>
+                  <textarea
+                    value={regenerateInstructions}
+                    onChange={e => setRegenerateInstructions(e.target.value)}
+                    placeholder="e.g. Make it simpler, add more code examples, focus on practical applications..."
+                    rows={2}
+                    style={{
+                      width: '100%', background: t.bg, border: `1px solid ${t.lineMd}`,
+                      borderRadius: 10, padding: '10px 12px', marginBottom: 8,
+                      fontFamily: ff.sans, fontSize: 13, color: t.txt,
+                    }}
+                  />
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <Btn v="ghost" onClick={() => { setRegenerateOpen(false); setRegenerateInstructions(''); }}
+                      style={{ flex: 1, fontSize: 12, letterSpacing: 0.5 }}>
+                      Cancel
+                    </Btn>
+                    <Btn v="primary" onClick={async () => {
+                      setRegenerating(true);
+                      const ok = await onRegenerate(sheet.node.modObj, sheet.node, regenerateInstructions || 'Make the content more accessible and easier to understand');
+                      setRegenerating(false);
+                      if (ok) { setRegenerated(true); setRegenerateOpen(false); }
+                    }} disabled={!regenerateInstructions.trim()}
+                      style={{ flex: 1, fontSize: 12, letterSpacing: 0.5 }}>
+                      Confirm
+                    </Btn>
+                  </div>
+                </div>
+              )}
+
+              {regenerating && (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '10px 0' }}>
+                  <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
+                    style={{ width: 14, height: 14, borderRadius: '50%', border: `2px solid ${t.line}`, borderTopColor: t.primary }}/>
+                  <span style={{ fontFamily: ff.sans, fontSize: 13, color: t.muted }}>Regenerating…</span>
+                </div>
+              )}
+
+              {regenerated && (
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '8px 0' }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={t.success} strokeWidth="2.5">
+                      <polyline points="20 6 9 17 4 12"/>
+                    </svg>
+                    <span style={{ fontFamily: ff.sans, fontSize: 13, fontWeight: 600, color: t.success }}>Regenerated!</span>
+                  </div>
+                  <Btn v="outline" onClick={() => { setSheet(null); setRegenerateOpen(false); setRegenerated(false); setRegenerateInstructions(''); onLesson(sheet.node.modObj, sheet.node); }}
+                    style={{ fontSize: 12, letterSpacing: 0.5 }}>
+                    View Updated Lesson →
+                  </Btn>
+                </div>
+              )}
             </motion.div>
           </>
         )}
@@ -1622,6 +1687,27 @@ Exactly: 3-4 sections, 5 keyPoints, 3 resources, 5 quiz Qs, 6 flashcards.`
     setLessonLoading(false);
   };
 
+  const regenerateLesson = async (mod, lesson, instructions) => {
+    const cacheKey = `${activeJourneyId}_${lesson.id}`;
+    try {
+      const data = await callAI(
+        `Rewrite the lesson "${lesson.title}" in "${mod.title}" for the "${skill}" course.
+Custom instructions: "${instructions}"
+
+Keep the same title and structure but adapt the content per the instructions above.`,
+        `Expert educator. Return ONLY JSON with the adapted lesson:
+{"title":"${lesson.title}","summary":"2 sentences reflecting the custom adaptation","sections":[{"heading":"","content":"140-word paragraph"}],"keyPoints":["x5"],"resources":[{"title":"","description":"1 sentence","icon":"<emoji>"}],"quiz":[{"question":"","options":["","","",""],"correct":<0-3>,"explanation":""}],"flashcards":[{"front":"term","back":"definition"}]}
+Exactly: 3-4 sections, 5 keyPoints, 3 resources, 5 quiz Qs, 6 flashcards.`
+      );
+      setLessons(l => ({ ...l, [cacheKey]: data }));
+      setLessonData(data);
+      return true;
+    } catch {
+      setErr('Failed to regenerate lesson.');
+      return false;
+    }
+  };
+
   const complete = (id) => {
     if (!activeJourneyId) return;
     const lesson = curriculum?.modules?.flatMap(m => m.lessons)?.find(l => l.id === id);
@@ -1910,6 +1996,7 @@ Exactly 10 questions covering all modules.`
                   onTab={setTab}
                   onSwitch={switchJourney}
                   onStartExam={startExam}
+                  onRegenerate={regenerateLesson}
                 />
               )}
             </motion.div>
