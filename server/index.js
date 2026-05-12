@@ -23,15 +23,14 @@ app.post('/api/ai', async (req, res) => {
   }
 
   const MODEL_MAP = {
-    lesson:   'tencent/hy3-preview',
-    code:     'mistral/codestral-2501',
-    curriculum: 'groq/llama-3.3-70b-versatile',
-    exam:     'groq/llama-3.3-70b-versatile',
+    lesson:     { provider: 'groq', model: 'llama-3.3-70b-versatile' },
+    code:       { provider: 'groq', model: 'llama-3.3-70b-versatile' },
+    curriculum: { provider: 'groq', model: 'llama-3.3-70b-versatile' },
+    exam:       { provider: 'groq', model: 'llama-3.3-70b-versatile' },
   };
 
-  const resolvedModel = MODEL_MAP[model] || MODEL_MAP.curriculum;
-  const isGroq = resolvedModel.startsWith('groq/');
-  const actualModel = isGroq ? resolvedModel.replace('groq/', '') : resolvedModel;
+  const { provider, model: actualModel } = MODEL_MAP[model] || MODEL_MAP.curriculum;
+  const isGroq = provider === 'groq';
 
   const body = {
     model: actualModel,
@@ -49,19 +48,14 @@ app.post('/api/ai', async (req, res) => {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${isGroq ? process.env.GROQ_API_KEY : process.env.OPENROUTER_API_KEY}`,
+      'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
     },
     body: JSON.stringify(body),
   };
 
-  if (!isGroq) {
-    fetchOptions.headers['HTTP-Referer'] = 'https://skillforge.app';
-    fetchOptions.headers['X-Title'] = 'SkillForge';
-  }
-
   let res2;
   try {
-    const base = isGroq ? 'https://api.groq.com/openai/v1/chat/completions' : 'https://openrouter.ai/api/v1/chat/completions';
+    const base = 'https://api.groq.com/openai/v1/chat/completions';
     res2 = await fetch(base, fetchOptions);
   } catch (e) {
     console.error('Fetch error:', e);

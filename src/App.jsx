@@ -1,6 +1,5 @@
-import { useState, useEffect, useRef, createContext, useContext, useCallback } from "react";
+import { useState, useEffect, useRef, createContext, useContext } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useUser, useAuth } from '@clerk/clerk-react';
 
 /* ─── PERSISTENCE ─── */
 const STORAGE_KEYS = {
@@ -1766,33 +1765,14 @@ Be encouraging but honest. Use examples, analogies, and counterexamples.`
 const DEFAULT_PROGRESS = { xp: 0, completed: {}, streak: 0, lastVisit: null };
 const DEFAULT_MEMORY = { cards: [], history: [] };
 
-function AuthShell({ children }) {
-  const { userId, getToken, isSignedIn } = useAuth();
-  const { user } = useUser();
-  return children({ userId, getToken, isSignedIn, user });
-}
-
-export default function App({ clerkAuth }) {
-  if (clerkAuth) {
-    return (
-      <AuthShell>
-        {({ userId, getToken, isSignedIn, user }) => (
-          <AppInner userId={userId} getToken={getToken} isSignedIn={isSignedIn} user={user} />
-        )}
-      </AuthShell>
-    );
-  }
-  return <AppInner userId={null} getToken={null} isSignedIn={false} user={null} />;
-}
-
-function AppInner({ userId, getToken, isSignedIn, user }) {
+export default function App() {
   const [dark, setDark] = useState(() => loadStorage(STORAGE_KEYS.dark, true));
   const t = dark ? DARK : LIGHT;
-  const ctx = {
-    get t() { return t; },
-    get dark() { return dark; },
-    get toggle() { return toggleDark; },
-  };
+  const ctx = { t, dark, toggle: () => {
+    const next = !dark;
+    saveStorage(STORAGE_KEYS.dark, next);
+    setDark(next);
+  }};
 
   const [tab, setTab] = useState('gen');
   const [subview, setSubview] = useState(null);
@@ -1816,61 +1796,7 @@ function AppInner({ userId, getToken, isSignedIn, user }) {
   const [examData, setExamData] = useState(null);
   const [examLoading, setExamLoading] = useState(false);
   const [tutorActive, setTutorActive] = useState(false);
-  const [syncStatus, setSyncStatus] = useState('idle');
-  const [lastSync, setLastSync] = useState(0);
-  const syncInFlight = useRef(false);
   const [err, setErr] = useState('');
-
-  const pushSync = useCallback(async () => {
-    if (!isSignedIn || syncInFlight.current) return;
-    syncInFlight.current = true;
-    setSyncStatus('syncing');
-    try {
-      const token = await getToken();
-      const res = await fetch('/api/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ journeys, progress, memory, lessons, badges, dark, localUpdated: lastSync }),
-      });
-      if (!res.ok) throw new Error(res.status);
-      const result = await res.json();
-      if (result.source === 'cloud') {
-        if (result.data.journeys) setJourneys(result.data.journeys);
-        if (result.data.progress) setProgress(p => ({ ...p, ...result.data.progress }));
-        if (result.data.memory) setMemory(result.data.memory);
-        if (result.data.lessons) setLessons(result.data.lessons);
-        if (result.data.badges) setBadges(result.data.badges);
-        if (result.data.dark !== undefined) { setDark(result.data.dark); saveStorage(STORAGE_KEYS.dark, result.data.dark); }
-      }
-      setLastSync(Date.now());
-      setSyncStatus('synced');
-    } catch {
-      setSyncStatus('error');
-    } finally {
-      syncInFlight.current = false;
-      setTimeout(() => setSyncStatus('idle'), 3000);
-    }
-  }, [isSignedIn, getToken, journeys, progress, memory, lessons, badges, dark, lastSync]);
-
-  useEffect(() => {
-    if (isSignedIn) pushSync();
-  }, [isSignedIn]);
-
-  const wrapSync = (updater) => {
-    const result = updater();
-    if (result instanceof Promise) {
-      return result.then(() => { if (isSignedIn) pushSync(); });
-    } else {
-      if (isSignedIn) pushSync();
-    }
-    return result;
-  };
-
-  const toggleDark = () => wrapSync(() => {
-    const next = !dark;
-    saveStorage(STORAGE_KEYS.dark, next);
-    setDark(next);
-  });
 
   useEffect(() => {
     if (!activeJourneyId && journeys.length > 0) {
@@ -1904,7 +1830,7 @@ CRITICAL: ${cfg.contentHint}`
       );
       const jid = `j_${Date.now()}`;
       const journey = { id: jid, skill: skillName, scope, curriculum: data, createdAt: Date.now() };
-      wrapSync(() => setJourneys(prev => [...prev, journey]));
+      setJourneys(prev => [...prev, journey]);
       setActiveJourneyId(jid);
       setTab('journey');
     } catch {
@@ -1935,7 +1861,7 @@ For code/programming: include algorithm analysis (time + space complexity), comp
 5 keyPoints, 3 resources, 5 quiz Qs (mix of conceptual and application), 6 flashcards.`, 'auto', skill
       );
       setLessonData(data);
-      wrapSync(() => setLessons(l => ({ ...l, [cacheKey]: data })));
+      setLessons(l => ({ ...l, [cacheKey]: data }));
     } catch {
       setErr('Failed to load lesson. Please try again.');
     }
@@ -1957,7 +1883,7 @@ ${curriculum?.scope === 'Mastery' ? `MASTERY — university level. Every concept
 For code topics: include full implementation with explanations, complexity analysis, and test cases.
 5 keyPoints, 3 resources, 5 quiz Qs, 6 flashcards.`, 'auto', skill
       );
-      wrapSync(() => setLessons(l => ({ ...l, [cacheKey]: data })));
+      setLessons(l => ({ ...l, [cacheKey]: data }));
       setLessonData(data);
       return true;
     } catch {
@@ -1988,11 +1914,11 @@ const complete = (id) => {
       };
     });
     if (lesson) {
-      wrapSync(() => setMemory(m => ({
+      setMemory(m => ({
         ...m,
         cards: [...(m.cards || []).filter(c => c.lessonId !== id), { lessonId: id, title: lesson.title, module: modTitle, journeyId: activeJourneyId, learnedAt: Date.now(), nextReview: Date.now() + MS_PER_DAY, interval: 1, rep: 0, ease: 2.5 }],
         history: [{ type: 'lesson_complete', id, title: lesson.title, journeyId: activeJourneyId, ts: Date.now() }, ...(m.history || [])].slice(0, HISTORY_LIMIT),
-      })));
+      }));
     }
     setTimeout(() => activateBadges(), 100);
   };
@@ -2005,7 +1931,7 @@ const complete = (id) => {
     if (!activeJourneyId) return;
     setJourneyProgress(activeJourneyId, p => ({ ...p, xp: p.xp + XP_PER_ARENA }));
     if (ratedCards && ratedCards.length > 0) {
-      wrapSync(() => setMemory(m => {
+      setMemory(m => {
         const ratingMap = {};
         ratedCards.forEach(rc => { ratingMap[rc.lessonId || rc.id] = rc.rating; });
         const updatedCards = (m.cards || []).map(c => {
@@ -2016,9 +1942,9 @@ const complete = (id) => {
           return { ...c, ease, interval, rep, nextReview: Date.now() + interval * 86400000 };
         });
         return { ...m, cards: updatedCards, history: [{ type: 'arena_done', title: arenaTitle, ts: Date.now() }, ...(m.history || [])].slice(0, 100) };
-      }));
+      });
     } else {
-      wrapSync(() => setMemory(m => ({ ...m, history: [{ type: 'arena_done', title: arenaTitle, ts: Date.now() }, ...(m.history || [])].slice(0, 100) })));
+      setMemory(m => ({ ...m, history: [{ type: 'arena_done', title: arenaTitle, ts: Date.now() }, ...(m.history || [])].slice(0, 100) }));
     }
   };
 
@@ -2064,7 +1990,7 @@ const complete = (id) => {
 
     if (newIds.length > 0) {
       const newBadges = newIds.map(id => ({ id, earnedAt: Date.now() }));
-      wrapSync(() => setBadges(prev => [...prev, ...newBadges]));
+      setBadges(prev => [...prev, ...newBadges]);
       if (newIds.length === 1) {
         const b = BADGE_DEFS.find(x => x.id === newIds[0]);
         setErr(`🏆 Badge unlocked: ${b?.label}!`);
@@ -2094,7 +2020,7 @@ Exactly 10 questions covering all modules.`
       );
       const exam = { title: data.title || `${curriculum.title} Final Exam`, questions: data.questions || data.quiz || [] };
       setExamData(exam);
-      wrapSync(() => setLessons(l => ({ ...l, [cacheKey]: exam })));
+      setLessons(l => ({ ...l, [cacheKey]: exam }));
     } catch {
       setErr('Failed to generate exam. Please try again.');
     }
@@ -2109,9 +2035,9 @@ Exactly 10 questions covering all modules.`
   };
 
   const deleteJourney = (id) => {
-    wrapSync(() => setJourneys(prev => prev.filter(j => j.id !== id)));
-    wrapSync(() => setProgress(p => { const n = { ...p }; delete n[id]; return n; }));
-    wrapSync(() => setMemory(m => ({ ...m, cards: (m.cards || []).filter(c => c.journeyId !== id), history: (m.history || []).filter(h => h.journeyId !== id) })));
+    setJourneys(prev => prev.filter(j => j.id !== id));
+    setProgress(p => { const n = { ...p }; delete n[id]; return n; });
+    setMemory(m => ({ ...m, cards: (m.cards || []).filter(c => c.journeyId !== id), history: (m.history || []).filter(h => h.journeyId !== id) }));
     if (activeJourneyId === id) {
       const remaining = journeys.filter(j => j.id !== id);
       setActiveJourneyId(remaining.length > 0 ? remaining[0].id : null);
@@ -2132,12 +2058,12 @@ Exactly 10 questions covering all modules.`
     reader.onload = (e) => {
       try {
         const data = JSON.parse(e.target.result);
-        if (data.journeys) wrapSync(() => setJourneys(data.journeys));
-        if (data.progress) wrapSync(() => setProgress(p => ({ ...p, ...data.progress })));
-        if (data.memory) wrapSync(() => setMemory(data.memory));
-        if (data.lessons) wrapSync(() => setLessons(data.lessons));
-        if (data.badges) wrapSync(() => setBadges(data.badges));
-        if (typeof data.dark === 'boolean') { wrapSync(() => setDark(data.dark)); saveStorage(STORAGE_KEYS.dark, data.dark); }
+        if (data.journeys) setJourneys(data.journeys);
+        if (data.progress) setProgress(p => ({ ...p, ...data.progress }));
+        if (data.memory) setMemory(data.memory);
+        if (data.lessons) setLessons(data.lessons);
+        if (data.badges) setBadges(data.badges);
+        if (typeof data.dark === 'boolean') { setDark(data.dark); saveStorage(STORAGE_KEYS.dark, data.dark); }
         setErr('');
       } catch { setErr('Failed to import data. Invalid file format.'); }
     };
@@ -2160,37 +2086,10 @@ Exactly 10 questions covering all modules.`
           SkillsForge
         </span>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          {syncStatus === 'syncing' && (
-            <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
-              style={{ width: 14, height: 14, borderRadius: '50%', border: `2px solid ${t.line}`, borderTopColor: t.primary }}/>
-          )}
-          {syncStatus === 'synced' && (
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={t.success} strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-          )}
-          {syncStatus === 'error' && (
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={t.danger} strokeWidth="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-          )}
-          <button onClick={toggleDark}
+          <button onClick={ctx.toggle}
             style={{ width: 30, height: 30, borderRadius: 7, background: t.surface, border: `1px solid ${t.line}`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: t.muted, fontSize: 13 }}>
             {dark ? '○' : '●'}
           </button>
-          {!isSignedIn ? (
-            <button
-              onClick={() => window.location.href = '/api/auth/sign-in'}
-              style={{ fontFamily: ff.sans, fontSize: 12, color: t.primary, fontWeight: 600, padding: '4px 10px', borderRadius: 999, border: `1px solid ${t.pLine}`, background: t.pDim }}>
-              Sign In
-            </button>
-          ) : (
-            <div style={{ width: 28, height: 28, borderRadius: '50%', background: t.primary, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-              {user?.imageUrl ? (
-                <img src={user.imageUrl} alt="avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }}/>
-              ) : (
-                <span style={{ fontFamily: ff.sans, fontSize: 11, fontWeight: 700, color: '#000' }}>
-                  {(user?.firstName?.[0] || user?.emailAddresses?.[0]?.emailAddress?.[0] || 'U').toUpperCase()}
-                </span>
-              )}
-            </div>
-          )}
         </div>
       </div>
 

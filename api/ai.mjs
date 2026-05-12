@@ -17,15 +17,14 @@ export default async function handler(req, res) {
   }
 
   const MODEL_MAP = {
-    lesson:   'tencent/hy3-preview',
-    code:     'mistral/codestral-2501',
-    curriculum: 'groq/llama-3.3-70b-versatile',
-    exam:     'groq/llama-3.3-70b-versatile',
+    lesson:     { provider: 'groq', model: 'llama-3.3-70b-versatile' },
+    code:       { provider: 'groq', model: 'llama-3.3-70b-versatile' },
+    curriculum: { provider: 'groq', model: 'llama-3.3-70b-versatile' },
+    exam:       { provider: 'groq', model: 'llama-3.3-70b-versatile' },
   };
 
-  const resolvedModel = MODEL_MAP[model] || MODEL_MAP.curriculum;
-  const isGroq = resolvedModel.startsWith('groq/');
-  const actualModel = isGroq ? resolvedModel.replace('groq/', '') : resolvedModel;
+  const { provider, model: actualModel } = MODEL_MAP[model] || MODEL_MAP.curriculum;
+  const isGroq = provider === 'groq';
 
   const body = {
     model: actualModel,
@@ -47,11 +46,6 @@ export default async function handler(req, res) {
     },
     body: JSON.stringify(body),
   };
-
-  if (!isGroq) {
-    fetchOptions.headers['HTTP-Referer'] = 'https://skillforge.app';
-    fetchOptions.headers['X-Title'] = 'SkillForge';
-  }
 
   let response;
   try {
