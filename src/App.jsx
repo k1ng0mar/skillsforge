@@ -4,6 +4,9 @@ import { marked } from 'marked';
 import hljs from 'highlight.js';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
+import { useAuth } from './hooks/useAuth';
+import AuthView from './components/AuthView';
+import { ff } from './constants';
 
 /* ─── MARKDOWN + RENDERING ─── */
 marked.setOptions({ gfm: true, breaks: true });
@@ -160,12 +163,6 @@ const LIGHT = {
   line: 'rgba(0,0,0,0.07)', lineMd: 'rgba(0,0,0,0.13)',
   glow: () => 'none',
   navBg: 'rgba(244,242,236,0.92)',
-};
-
-const ff = {
-  serif: "'Fraunces', Georgia, serif",
-  sans: "'Plus Jakarta Sans', sans-serif",
-  mono: "'JetBrains Mono', monospace",
 };
 
 /* ─── CONTEXT ─── */
@@ -1287,9 +1284,9 @@ function LessonView({ lessonData, loading, moduleTitle, lessonId, progress, onQu
         <div style={{ width: 16 }}/>
       </div>
 
-      {/* content */}
-      <div ref={scrollRef} onScroll={onScroll}
-        style={{ flex: 1, overflowY: 'auto', padding: '28px 24px 24px' }}>
+       {/* content */}
+       <div ref={scrollRef} onScroll={onScroll}
+         style={{ flex: 1, overflowY: 'auto', padding: '28px 24px 120px' }}>
 
         <div style={{ marginBottom: 16 }}>
           <Tag label="Lesson"/>
@@ -1349,12 +1346,13 @@ function LessonView({ lessonData, loading, moduleTitle, lessonId, progress, onQu
         </div>
       </div>
 
-      {/* sticky CTA */}
+      {/* fixed CTA */}
       <div style={{
-        position: 'sticky', bottom: 0, padding: '12px 24px 28px',
+        position: 'fixed', bottom: 0, left: 0, right: 0, padding: '12px 24px 28px',
         background: dark ? 'rgba(9,10,12,0.95)' : 'rgba(244,242,236,0.95)',
         backdropFilter: 'blur(12px)',
         borderTop: `1px solid ${t.line}`,
+        zIndex: 100,
       }}>
         {!isDone ? (
           <Btn v="primary" full onClick={() => onComplete(lessonId)}
@@ -1825,6 +1823,53 @@ export default function App() {
     setDark(next);
   }};
 
+  const { user, authLoading, authError, guestMode, handleLogout, handleGuest, exitGuest, saveToFirestore, loadUserData, handleLogin, handleSignup } = useAuth();
+  const [userDataLoaded, setUserDataLoaded] = useState(false);
+
+  // Load user data from Firestore on login
+  useEffect(() => {
+    if (!user) {
+      setUserDataLoaded(false);
+      return;
+    }
+    const loadData = async () => {
+      const data = await loadUserData();
+      if (data) {
+        if (data.journeys) setJourneys(data.journeys);
+        if (data.activeJourneyId !== undefined) setActiveJourneyId(data.activeJourneyId);
+        if (data.progress) setProgress(data.progress);
+        if (data.memory) setMemory(data.memory);
+        if (data.lessons) setLessons(data.lessons);
+        if (data.badges) setBadges(data.badges);
+        if (data.dark !== undefined) setDark(data.dark);
+      }
+      setUserDataLoaded(true);
+    };
+    loadData();
+  }, [user, loadUserData]);
+
+  if (authLoading) {
+    return (
+      <div style={{ minHeight: '100vh', background: t.bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <motion.div animate={{ rotate: 360 }} transition={{ duration: 1.4, repeat: Infinity, ease: 'linear' }}
+          style={{ width: 32, height: 32, borderRadius: '50%', border: `3px solid ${t.line}`, borderTopColor: t.primary }}/>
+      </div>
+    );
+  }
+
+  if (!user && !guestMode) {
+    return <AuthView onLogin={handleLogin} onSignup={handleSignup} onGuest={handleGuest} error={authError} t={t} dark={dark} />;
+  }
+
+  if (!userDataLoaded) {
+    return (
+      <div style={{ minHeight: '100vh', background: t.bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <motion.div animate={{ rotate: 360 }} transition={{ duration: 1.4, repeat: Infinity, ease: 'linear' }}
+          style={{ width: 32, height: 32, borderRadius: '50%', border: `3px solid ${t.line}`, borderTopColor: t.primary }}/>
+      </div>
+    );
+  }
+
   const [tab, setTab] = useState('gen');
   const [subview, setSubview] = useState(null);
   const [skill, setSkill] = useState('');
@@ -1848,6 +1893,12 @@ export default function App() {
   const [examLoading, setExamLoading] = useState(false);
   const [tutorActive, setTutorActive] = useState(false);
   const [err, setErr] = useState('');
+
+  // Save to Firestore when state changes
+  useEffect(() => {
+    if (!user || !userDataLoaded) return;
+    saveToFirestore({ journeys, activeJourneyId, progress, memory, lessons, badges, dark });
+  }, [user, userDataLoaded, journeys, activeJourneyId, progress, memory, lessons, badges, dark]);
 
   useEffect(() => {
     if (!activeJourneyId && journeys.length > 0) {
@@ -2140,6 +2191,19 @@ Exactly 10 questions covering all modules.`
             style={{ width: 30, height: 30, borderRadius: 7, background: t.surface, border: `1px solid ${t.line}`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: t.muted, fontSize: 13 }}>
             {dark ? '○' : '●'}
           </button>
+          {guestMode ? (
+            <button onClick={() => setGuestMode(false)}
+              style={{ height: 30, padding: '0 10px', borderRadius: 7, background: t.surface, border: `1px solid ${t.line}`, display: 'flex', alignItems: 'center', gap: 4, color: t.amber, fontSize: 12, fontFamily: ff.sans }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+              Exit Guest
+            </button>
+          ) : user ? (
+            <button onClick={handleLogout}
+              style={{ height: 30, padding: '0 10px', borderRadius: 7, background: t.surface, border: `1px solid ${t.line}`, display: 'flex', alignItems: 'center', gap: 4, color: t.muted, fontSize: 12, fontFamily: ff.sans }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+              Logout
+            </button>
+          ) : null}
         </div>
       </div>
 
