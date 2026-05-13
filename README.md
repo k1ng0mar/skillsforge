@@ -5,7 +5,7 @@ AI-powered custom curriculum generator with spaced repetition learning.
 ### Features
 
 - **AI Curriculum Generation** — Describe what you want to learn, get a custom curriculum with modules and lessons
-- **Multi-Model AI Routing** — Curriculum/exams and lessons use Llama 3.3 via Groq; auto-detects code/programming topics for programming-focused content
+- **Multi-Model AI Routing** — Curriculum/exams use Llama 3.3 via Groq; lessons use Ring 2.6 1T via OpenRouter free tier; code/programming topics detected and handled
 - **Three Depth Levels** — Crash Course (lean overview), Standard (thorough), Mastery (university-level: 8-12 modules, 5 sections × 300+ words, derivations, multi-tier examples, no stone left unturned)
 - **AI Tutor Mode** — Ask questions about any lesson in a live chat; Hy3 uses the full lesson + curriculum context to answer
 - **Skill Tree** — Visual neural pathway showing your learning progress
@@ -46,9 +46,11 @@ Create `.env.local` with your API keys:
 
 ```
 GROQ_API_KEY=your_groq_key_here
+OPENROUTER_API_KEY=your_openrouter_key_here
 ```
 
-- **Groq** for everything: [console.groq.com](https://console.groq.com) (free tier, llama-3.3-70b-versatile — 14,400 requests/day)
+- **Groq** for curriculum/exams: [console.groq.com](https://console.groq.com) (free tier, llama-3.3-70b-versatile — 14,400 req/day)
+- **OpenRouter** for lessons (free tier — `inclusionai/ring-2.6-1t:free`, 50 req/day on free plan)
 
 ### Production Build
 
@@ -69,6 +71,7 @@ Add these environment variables in **Vercel → Project → Settings → Environ
 | Name | Value |
 |------|-------|
 | `GROQ_API_KEY` | Your Groq API key |
+| `OPENROUTER_API_KEY` | Your OpenRouter API key |
 
 The project includes:
 - `api/ai.mjs` — Serverless AI proxy (multi-provider model routing)
@@ -76,12 +79,10 @@ The project includes:
 
 ### AI Model Routing
 
-All AI tasks route through Groq (free tier, 14,400 req/day):
-
-| Task | Model |
-|------|-------|
-| Curriculum + Exams | `llama-3.3-70b-versatile` via Groq |
-| Lessons (general + code) | `llama-3.3-70b-versatile` via Groq |
+| Task | Model | Provider |
+|------|-------|----------|
+| Curriculum + Exams | `llama-3.3-70b-versatile` | Groq (14,400 req/day free) |
+| Lessons | `inclusionai/ring-2.6-1t:free` | OpenRouter (50 req/day free) |
 
 ### Data
 

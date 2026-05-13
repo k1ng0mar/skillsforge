@@ -1,5 +1,53 @@
 import { useState, useEffect, useRef, createContext, useContext } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { marked } from 'marked';
+import hljs from 'highlight.js';
+import katex from 'katex';
+import 'katex/dist/katex.min.css';
+
+/* ─── MARKDOWN + RENDERING ─── */
+marked.setOptions({ gfm: true, breaks: true });
+const renderer = new marked.Renderer();
+renderer.code = (code, lang) => {
+  const validLang = lang && hljs.getLanguage(lang) ? lang : 'plaintext';
+  const highlighted = hljs.highlight(code, { language: validLang }).value;
+  return `<pre style="background:#1B1F27;border-radius:10px;padding:14px 16px;overflow-x:auto;margin:12px 0;"><code class="hljs language-${validLang}">${highlighted}</code></pre>`;
+};
+marked.use({ renderer });
+
+function renderMath(text) {
+  const parts = text.split(/(\$\$[\s\S]+?\$\$|\$[^$\n]+?\$)/g);
+  return parts.map((part, i) => {
+    if (part.startsWith('$$') && part.endsWith('$$')) {
+      try {
+        return <span key={i} dangerouslySetInnerHTML={{ __html: katex.renderToString(part.slice(2, -2), { displayMode: true, throwOnError: false }) }} />;
+      } catch { return <span key={i} style={{ color: 'var(--err)' }}>{part}</span>; }
+    }
+    if (part.startsWith('$') && part.endsWith('$')) {
+      try {
+        return <span key={i} dangerouslySetInnerHTML={{ __html: katex.renderToString(part.slice(1, -1), { displayMode: false, throwOnError: false }) }} />;
+      } catch { return <span key={i}>{part}</span>; }
+    }
+    return part;
+  });
+}
+
+function renderContent(text) {
+  if (!text) return null;
+  const paragraphs = text.split(/\n\n+/);
+  return paragraphs.map((para, i) => {
+    para = para.trim();
+    if (!para) return null;
+    if (para.startsWith('```')) {
+      return <div key={i} dangerouslySetInnerHTML={{ __html: marked.parse(para) }} />;
+    }
+    const inlines = renderMath(para);
+    if (Array.isArray(inlines)) {
+      return <p key={i} style={{ fontFamily: ff.sans, fontSize: 16, color: 'inherit', lineHeight: 1.82 }}>{inlines}</p>;
+    }
+    return <p key={i} style={{ fontFamily: ff.sans, fontSize: 16, color: 'inherit', lineHeight: 1.82 }} dangerouslySetInnerHTML={{ __html: marked.parse(inlines) }} />;
+  });
+}
 
 /* ─── PERSISTENCE ─── */
 const STORAGE_KEYS = {
@@ -83,6 +131,11 @@ input:focus, textarea:focus { outline: none; }
 button { cursor: pointer; font-family: inherit; border: none; background: none; }
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-thumb { background: rgba(128,128,128,0.15); border-radius: 4px; }
+code.hljs { background: transparent; padding: 0; font-family: 'JetBrains Mono', monospace; font-size: 13px; }
+pre code.hljs { background: transparent; padding: 0; }
+.katex { font-size: 1.05em; }
+.katex-display { margin: 16px 0; overflow-x: auto; }
+p { line-height: 1.82; }
 `;
 
 /* ─── THEMES ─── */
@@ -1261,9 +1314,9 @@ function LessonView({ lessonData, loading, moduleTitle, lessonId, progress, onQu
             }}>
               {s.heading}
             </h2>
-            <p style={{ fontFamily: ff.sans, fontSize: 16, color: dark ? 'rgba(241,243,245,0.82)' : t.muted, lineHeight: 1.82 }}>
-              {s.content}
-            </p>
+            <div style={{ fontFamily: ff.sans, fontSize: 16, color: dark ? 'rgba(241,243,245,0.82)' : t.muted }}>
+              {renderContent(s.content)}
+            </div>
           </div>
         ))}
 
@@ -1283,7 +1336,7 @@ function LessonView({ lessonData, loading, moduleTitle, lessonId, progress, onQu
                 <span style={{ fontFamily: ff.mono, fontSize: 10, color: t.primary, fontWeight: 600, marginTop: 3, flexShrink: 0 }}>
                   {String(i + 1).padStart(2, '0')}
                 </span>
-                <p style={{ fontFamily: ff.sans, fontSize: 15, color: t.txt, lineHeight: 1.65 }}>{pt}</p>
+                <div style={{ fontFamily: ff.sans, fontSize: 15, color: t.txt, lineHeight: 1.65 }}>{renderContent(pt)}</div>
               </div>
             ))}
           </div>
@@ -1713,10 +1766,8 @@ Be encouraging but honest. Use examples, analogies, and counterexamples.`
                 📖
               </div>
             )}
-            <div style={{ maxWidth: '75%', background: msg.role === 'user' ? t.primary : t.surface, color: msg.role === 'user' ? '#000' : t.txt, borderRadius: 16, padding: '12px 16px', fontFamily: ff.sans, fontSize: 14, lineHeight: 1.65, border: msg.role === 'user' ? 'none' : `1px solid ${t.line}` }}>
-              {msg.content.split('\n').map((line, j) => (
-                <p key={j} style={{ marginBottom: j < msg.content.split('\n').length - 1 ? 4 : 0 }}>{line}</p>
-              ))}
+            <div style={{ maxWidth: '75%', background: msg.role === 'user' ? t.primary : t.surface, color: msg.role === 'user' ? '#000' : t.txt, borderRadius: 16, padding: '12px 16px', fontFamily: ff.sans, fontSize: 14, border: msg.role === 'user' ? 'none' : `1px solid ${t.line}` }}>
+              {renderContent(msg.content)}
             </div>
           </div>
         ))}
@@ -1901,6 +1952,7 @@ const complete = (id) => {
     if (!activeJourneyId) return;
     const lesson = curriculum?.modules?.flatMap(m => m.lessons)?.find(l => l.id === id);
     const modTitle = curriculum?.modules?.find(m => m.lessons?.some(l => l.id === id))?.title;
+    if (!lesson) return;
     setJourneyProgress(activeJourneyId, p => {
       const now = Date.now();
       const lastVisit = p.lastVisit || 0;
@@ -1913,13 +1965,11 @@ const complete = (id) => {
         lastVisit: now,
       };
     });
-    if (lesson) {
-      setMemory(m => ({
-        ...m,
-        cards: [...(m.cards || []).filter(c => c.lessonId !== id), { lessonId: id, title: lesson.title, module: modTitle, journeyId: activeJourneyId, learnedAt: Date.now(), nextReview: Date.now() + MS_PER_DAY, interval: 1, rep: 0, ease: 2.5 }],
-        history: [{ type: 'lesson_complete', id, title: lesson.title, journeyId: activeJourneyId, ts: Date.now() }, ...(m.history || [])].slice(0, HISTORY_LIMIT),
-      }));
-    }
+    setMemory(m => ({
+      ...m,
+      cards: [...(m.cards || []).filter(c => c.lessonId !== id), { lessonId: id, title: lesson.title, module: modTitle, journeyId: activeJourneyId, learnedAt: Date.now(), nextReview: Date.now() + MS_PER_DAY, interval: 1, rep: 0, ease: 2.5 }],
+      history: [{ type: 'lesson_complete', id, title: lesson.title, journeyId: activeJourneyId, ts: Date.now() }, ...(m.history || [])].slice(0, HISTORY_LIMIT),
+    }));
     setTimeout(() => activateBadges(), 100);
   };
 
@@ -2013,7 +2063,7 @@ const complete = (id) => {
     setExamData(null); setExamLoading(true); setSubview('exam');
     try {
       const data = await callAI(
-        `Create a comprehensive final exam for the "${curriculum.title}" curriculum covering: ${curriculum.modules.map(m => m.title).join(', ')}.`,
+        `Create a comprehensive final exam for the "${curriculum?.title}" curriculum covering: ${(curriculum?.modules || []).map(m => m.title).join(', ')}.`,
         `Expert examiner. Return ONLY JSON with a comprehensive exam:
 {"title":"${curriculum.title} Final Exam","questions":[{"question":"","options":["","","",""],"correct":<0-3>,"explanation":""}]}
 Exactly 10 questions covering all modules.`

@@ -23,7 +23,7 @@ app.post('/api/ai', async (req, res) => {
   }
 
   const MODEL_MAP = {
-    lesson:     { provider: 'groq', model: 'llama-3.3-70b-versatile' },
+    lesson:     { provider: 'openrouter', model: 'inclusionai/ring-2.6-1t:free' },
     code:       { provider: 'groq', model: 'llama-3.3-70b-versatile' },
     curriculum: { provider: 'groq', model: 'llama-3.3-70b-versatile' },
     exam:       { provider: 'groq', model: 'llama-3.3-70b-versatile' },
@@ -31,6 +31,7 @@ app.post('/api/ai', async (req, res) => {
 
   const { provider, model: actualModel } = MODEL_MAP[model] || MODEL_MAP.curriculum;
   const isGroq = provider === 'groq';
+  const isOpenRouter = provider === 'openrouter';
 
   const body = {
     model: actualModel,
@@ -48,14 +49,19 @@ app.post('/api/ai', async (req, res) => {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
+      'Authorization': `Bearer ${isGroq ? process.env.GROQ_API_KEY : process.env.OPENROUTER_API_KEY}`,
     },
     body: JSON.stringify(body),
   };
 
+  if (isOpenRouter) {
+    fetchOptions.headers['HTTP-Referer'] = 'https://skillforge.app';
+    fetchOptions.headers['X-Title'] = 'SkillForge';
+  }
+
   let res2;
   try {
-    const base = 'https://api.groq.com/openai/v1/chat/completions';
+    const base = isGroq ? 'https://api.groq.com/openai/v1/chat/completions' : 'https://openrouter.ai/api/v1/chat/completions';
     res2 = await fetch(base, fetchOptions);
   } catch (e) {
     console.error('Fetch error:', e);
@@ -91,9 +97,17 @@ app.post('/api/ai', async (req, res) => {
 
   try {
     let cleaned = raw.replace(/```json|```/g, '').trim();
-    cleaned = cleaned.replace(/^[^{[]*/, '').replace(/[}\]]$/, '');
-    const parsed = JSON.parse(cleaned);
-    res.json(parsed);
+    try {
+      return res.json(JSON.parse(cleaned));
+    } catch (e1) {
+      try {
+        const stripped = cleaned.replace(/^["']|["']$/g, '');
+        return res.json(JSON.parse(stripped));
+      } catch (e2) {
+        const trimmed = cleaned.replace(/^[^{[]*/, '').replace(/[}\]]*$/, '');
+        return res.json(JSON.parse(trimmed));
+      }
+    }
   } catch (e) {
     console.error('JSON parse error on content:', e, 'Raw:', raw.slice(0, 300));
     res.status(500).json({ error: 'Failed to parse AI response' });
