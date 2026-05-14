@@ -307,12 +307,12 @@ function Btn({ children, onClick, v = 'primary', style, disabled, full }) {
   const { t, dark } = useT();
   const [hov, setHov] = useState(false);
   const variants = {
-    primary: { bg: t.primary, clr: '#000', border: 'none', hov: dark ? '#44F6FF' : '#005A68' },
-    outline: { bg: 'transparent', clr: t.primary, border: `1px solid ${t.pLine}`, hov: t.pDim },
-    ghost:   { bg: 'transparent', clr: t.muted, border: `1px solid ${t.line}`, hov: t.line },
-    success: { bg: t.sDim, clr: t.success, border: `1px solid ${t.sLine}`, hov: `${t.success}22` },
-    danger:  { bg: t.rDim, clr: t.danger, border: `1px solid ${t.rLine}`, hov: `${t.danger}22` },
-    amber:   { bg: t.aDim, clr: t.amber, border: `1px solid ${t.aLine}`, hov: `${t.amber}22` },
+    primary: { bg: t.primary, clr: '#000', border: 'none', hov: dark ? '#44F6FF' : '#005A68', shadow: dark ? '0 4px 14px rgba(0,240,255,0.25), 0 1px 3px rgba(0,240,255,0.15)' : '0 4px 14px rgba(0,122,140,0.25), 0 1px 3px rgba(0,122,140,0.15)', shadowHov: dark ? '0 6px 20px rgba(0,240,255,0.4), 0 2px 6px rgba(0,240,255,0.25)' : '0 6px 20px rgba(0,122,140,0.4), 0 2px 6px rgba(0,122,140,0.25)' },
+    outline: { bg: 'transparent', clr: t.primary, border: `1px solid ${t.pLine}`, hov: t.pDim, shadow: 'none', shadowHov: 'none' },
+    ghost:   { bg: 'transparent', clr: t.muted, border: `1px solid ${t.line}`, hov: t.line, shadow: 'none', shadowHov: 'none' },
+    success: { bg: t.sDim, clr: t.success, border: `1px solid ${t.sLine}`, hov: `${t.success}22`, shadow: dark ? '0 4px 14px rgba(0,255,148,0.15), 0 1px 3px rgba(0,255,148,0.1)' : '0 4px 14px rgba(10,124,64,0.15), 0 1px 3px rgba(10,124,64,0.1)', shadowHov: dark ? '0 6px 20px rgba(0,255,148,0.25), 0 2px 6px rgba(0,255,148,0.15)' : '0 6px 20px rgba(10,124,64,0.25), 0 2px 6px rgba(10,124,64,0.15)' },
+    danger:  { bg: t.rDim, clr: t.danger, border: `1px solid ${t.rLine}`, hov: `${t.danger}22`, shadow: dark ? '0 4px 14px rgba(255,0,85,0.15), 0 1px 3px rgba(255,0,85,0.1)' : '0 4px 14px rgba(192,16,68,0.15), 0 1px 3px rgba(192,16,68,0.1)', shadowHov: dark ? '0 6px 20px rgba(255,0,85,0.25), 0 2px 6px rgba(255,0,85,0.15)' : '0 6px 20px rgba(192,16,68,0.25), 0 2px 6px rgba(192,16,68,0.15)' },
+    amber:   { bg: t.aDim, clr: t.amber, border: `1px solid ${t.aLine}`, hov: `${t.amber}22`, shadow: dark ? '0 4px 14px rgba(245,158,11,0.15), 0 1px 3px rgba(245,158,11,0.1)' : '0 4px 14px rgba(180,83,9,0.15), 0 1px 3px rgba(180,83,9,0.1)', shadowHov: dark ? '0 6px 20px rgba(245,158,11,0.25), 0 2px 6px rgba(245,158,11,0.15)' : '0 6px 20px rgba(180,83,9,0.25), 0 2px 6px rgba(180,83,9,0.15)' },
   };
   const s = variants[v] || variants.primary;
   return (
@@ -332,8 +332,9 @@ function Btn({ children, onClick, v = 'primary', style, disabled, full }) {
         justifyContent: 'center', gap: 7,
         width: full ? '100%' : 'auto',
         opacity: disabled ? 0.4 : 1,
-        transition: 'background 0.13s',
+        transition: 'background 0.15s, box-shadow 0.15s',
         cursor: disabled ? 'not-allowed' : 'pointer',
+        boxShadow: hov && !disabled ? s.shadowHov : s.shadow,
         ...style,
       }}
     >{children}</motion.button>
@@ -1825,6 +1826,14 @@ export default function App() {
 
   const { user, authLoading, authError, guestMode, handleLogout, handleGuest, exitGuest, saveToFirestore, loadUserData, handleLogin, handleSignup } = useAuth();
   const [userDataLoaded, setUserDataLoaded] = useState(false);
+  const [authTimedOut, setAuthTimedOut] = useState(false);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (authLoading) setAuthTimedOut(true);
+    }, 8000);
+    return () => clearTimeout(timer);
+  }, [authLoading]);
 
   useEffect(() => {
     if (!user) {
@@ -1868,7 +1877,7 @@ export default function App() {
   const [badges, setBadges] = useLocalStorage(STORAGE_KEYS.badges, []);
   const [examData, setExamData] = useState(null);
 
-  const ready = !authLoading && (!user || userDataLoaded);
+  const ready = (!authLoading || authTimedOut) && (!user || userDataLoaded);
 
   if (!ready || (!user && !guestMode)) {
     return (
@@ -2170,6 +2179,8 @@ Exactly 10 questions covering all modules.`
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         padding: '16px 20px',
         paddingTop: 'calc(16px + env(safe-area-inset-top, 0px))',
+        background: t.bg,
+        borderBottom: `1px solid ${t.line}`,
       }}>
         <span style={{ fontFamily: ff.serif, fontSize: 18, fontWeight: 700, color: t.txt, letterSpacing: '-0.3px' }}>
           SkillsForge

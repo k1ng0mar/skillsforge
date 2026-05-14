@@ -96,7 +96,7 @@ fontFamily: ff.sans,
       padding: '32px 32px 28px',
       border: `1px solid ${t.line}`,
       boxShadow: dark
-        ? `0 2px 40px rgba(0,0,0,0.25)`
+        ? `0 4px 24px rgba(0,0,0,0.25), 0 1px 4px rgba(0,0,0,0.15)`
         : `0 4px 32px rgba(0,0,0,0.06), 0 1px 4px rgba(0,0,0,0.04)`,
     }}>
 
@@ -143,6 +143,7 @@ fontFamily: ff.sans,
           gap: 10,
           transition: 'all 0.18s ease',
           marginBottom: 20,
+          boxShadow: '0 2px 8px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04)',
         }}
       >
         {googleLoading ? (
@@ -269,7 +270,7 @@ fontFamily: ff.sans,
             letterSpacing: 0.3,
             cursor: loading ? 'not-allowed' : 'pointer',
             opacity: loading ? 0.7 : 1,
-            boxShadow: `0 4px 16px ${t.primary}50`,
+            boxShadow: `0 4px 14px ${t.primary}30, 0 1px 3px ${t.primary}20`,
             transition: 'opacity 0.18s ease, box-shadow 0.18s ease',
           }}
         >
