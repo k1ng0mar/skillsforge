@@ -1824,7 +1824,7 @@ export default function App() {
     setDark(next);
   }};
 
-  const { user, authLoading, authError, guestMode, handleLogout, handleGuest, exitGuest, saveToFirestore, loadUserData, handleLogin, handleSignup } = useAuth();
+  const { user, authLoading, authError, guestMode, handleLogout, handleGuest, exitGuest, saveToSupabase, loadUserData, handleLogin, handleSignup } = useAuth();
   const [userDataLoaded, setUserDataLoaded] = useState(false);
   const [authTimedOut, setAuthTimedOut] = useState(false);
 
@@ -1879,12 +1879,28 @@ export default function App() {
 
   const ready = (!authLoading || authTimedOut) && (!user || userDataLoaded);
 
-  if (!ready || (!user && !guestMode)) {
+  if (!ready) {
     return (
       <div style={{ minHeight: '100vh', background: t.bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <motion.div animate={{ rotate: 360 }} transition={{ duration: 1.4, repeat: Infinity, ease: 'linear' }}
           style={{ width: 32, height: 32, borderRadius: '50%', border: `3px solid ${t.line}`, borderTopColor: t.primary }}/>
       </div>
+    );
+  }
+
+  if (!user && !guestMode) {
+    return (
+      <Ctx.Provider value={ctx}>
+        <style>{BASE}</style>
+        <AuthView
+          onLogin={handleLogin}
+          onSignup={handleSignup}
+          onGuest={handleGuest}
+          error={authError}
+          t={t}
+          dark={dark}
+        />
+      </Ctx.Provider>
     );
   }
 
@@ -1894,7 +1910,7 @@ export default function App() {
 
   useEffect(() => {
     if (!user || !userDataLoaded) return;
-    saveToFirestore({ journeys, activeJourneyId, progress, memory, lessons, badges, dark });
+    saveToSupabase({ journeys, activeJourneyId, progress, memory, lessons, badges, dark });
   }, [user, userDataLoaded, journeys, activeJourneyId, progress, memory, lessons, badges, dark]);
 
   useEffect(() => {

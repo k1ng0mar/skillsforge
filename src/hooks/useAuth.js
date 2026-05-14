@@ -1,7 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { auth, db } from '../firebase';
+import { supabase } from '../supabase';
 
 export function useAuth() {
   const [user, setUser] = useState(null);
@@ -10,7 +8,7 @@ export function useAuth() {
   const [guestMode, setGuestMode] = useState(false);
 
   useEffect(() => {
-    if (!auth) {
+    if (!supabase) {
       setAuthLoading(false);
       return;
     }
@@ -20,33 +18,39 @@ export function useAuth() {
       if (settled) return;
       settled = true;
       setAuthLoading(false);
-    }, 6000);
+    }, 5000);
 
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      setUser(user);
+      setUser(session?.user ?? null);
       setAuthLoading(false);
-    }, (err) => {
+    }).catch((err) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      console.warn('Auth error:', err);
+      console.warn('Auth init failed:', err);
       setUser(null);
       setAuthLoading(false);
     });
 
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (settled) return;
+      setUser(session?.user ?? null);
+    });
+
     return () => {
       clearTimeout(timer);
-      unsubscribe();
+      subscription?.unsubscribe();
     };
   }, []);
 
   const handleSignup = async (email, password) => {
     setAuthError('');
     try {
-      await createUserWithEmailAndPassword(auth, email, password);
+      const { error } = await supabase.auth.signUp({ email, password });
+      if (error) setAuthError(error.message);
     } catch (err) {
       setAuthError(err.message);
     }
@@ -55,14 +59,15 @@ export function useAuth() {
   const handleLogin = async (email, password) => {
     setAuthError('');
     try {
-      await signInWithEmailAndPassword(auth, email, password);
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) setAuthError(error.message);
     } catch (err) {
       setAuthError(err.message);
     }
   };
 
   const handleLogout = async () => {
-    await signOut(auth);
+    await supabase.auth.signOut();
   };
 
   const handleGuest = () => {
@@ -73,25 +78,28 @@ export function useAuth() {
     setGuestMode(false);
   };
 
-  const saveToFirestore = useCallback(async (data) => {
-    if (!user || guestMode) return;
+  const saveToSupabase = useCallback(async (data) => {
+    if (!user || guestMode || !supabase) return;
     try {
-      const docRef = doc(db, 'users', user.uid);
-      await setDoc(docRef, data, { merge: true });
+      const { error } = await supabase
+        .from('users')
+        .upsert({ id: user.id, ...data, updated_at: new Date().toISOString() });
+      if (error) console.error('Failed to save:', error);
     } catch (err) {
-      console.error('Failed to save to Firestore:', err);
+      console.error('Failed to save to Supabase:', err);
     }
   }, [user, guestMode]);
 
   const loadUserData = useCallback(async () => {
-    if (!user) return null;
+    if (!user || !supabase) return null;
     try {
-      const docRef = doc(db, 'users', user.uid);
-      const docSnap = await getDoc(docRef);
-      if (docSnap.exists()) {
-        return docSnap.data();
-      }
-      return null;
+      const { data, error } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', user.id)
+        .single();
+      if (error && error.code !== 'PGRST116') console.error('Failed to load:', error);
+      return data || null;
     } catch (err) {
       console.error('Failed to load user data:', err);
       return null;
@@ -108,7 +116,7 @@ export function useAuth() {
     handleLogout,
     handleGuest,
     exitGuest,
-    saveToFirestore,
+    saveToSupabase,
     loadUserData,
   };
 }
