@@ -5,6 +5,7 @@ entrypoint = "index.html"
 
 [nix]
 channel = "stable-24_05"
+packages = ["firebase-tools"]
 
 [unitTest]
 language = "nodejs"
@@ -33,6 +34,9 @@ externalPort = 80
 [[ports]]
 localPort = 5174
 externalPort = 3000
+
+[[ports]]
+localPort = 9005
 
 [agent]
 expertMode = true

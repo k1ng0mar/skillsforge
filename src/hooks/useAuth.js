@@ -5,16 +5,42 @@ import { auth, db } from '../firebase';
 
 export function useAuth() {
   const [user, setUser] = useState(null);
-  const [authLoading, setAuthLoading] = useState(true);
+  const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState('');
   const [guestMode, setGuestMode] = useState(false);
 
   useEffect(() => {
+    if (!auth) {
+      setAuthLoading(false);
+      return;
+    }
+
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      setAuthLoading(false);
+    }, 6000);
+
     const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
       setUser(user);
       setAuthLoading(false);
+    }, (err) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      console.warn('Auth error:', err);
+      setUser(null);
+      setAuthLoading(false);
     });
-    return unsubscribe;
+
+    return () => {
+      clearTimeout(timer);
+      unsubscribe();
+    };
   }, []);
 
   const handleSignup = async (email, password) => {
