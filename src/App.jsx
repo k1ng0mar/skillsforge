@@ -104,7 +104,7 @@ function loadStorage(key, fallback) {
     if (e.name === 'QuotaExceededError') {
       console.error('localStorage quota exceeded — clearing oldest lessons');
       const keys = Object.keys(localStorage).filter(k => k.startsWith('sf_'));
-      for (const k of keys) { try { localStorage.removeItem(k); break; } catch {} }
+      for (const k of keys) { try { localStorage.removeItem(k); break; } catch (e) { /* skip locked keys */ } }
     }
     return fallback;
   }
@@ -1826,10 +1826,9 @@ export default function App() {
   const { user, authLoading, authError, guestMode, handleLogout, handleGuest, exitGuest, saveToFirestore, loadUserData, handleLogin, handleSignup } = useAuth();
   const [userDataLoaded, setUserDataLoaded] = useState(false);
 
-  // Load user data from Firestore on login
   useEffect(() => {
     if (!user) {
-      setUserDataLoaded(false);
+      setUserDataLoaded(true);
       return;
     }
     const loadData = async () => {
@@ -1847,28 +1846,6 @@ export default function App() {
     };
     loadData();
   }, [user, loadUserData]);
-
-  if (authLoading) {
-    return (
-      <div style={{ minHeight: '100vh', background: t.bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <motion.div animate={{ rotate: 360 }} transition={{ duration: 1.4, repeat: Infinity, ease: 'linear' }}
-          style={{ width: 32, height: 32, borderRadius: '50%', border: `3px solid ${t.line}`, borderTopColor: t.primary }}/>
-      </div>
-    );
-  }
-
-  if (!user && !guestMode) {
-    return <AuthView onLogin={handleLogin} onSignup={handleSignup} onGuest={handleGuest} error={authError} t={t} dark={dark} />;
-  }
-
-  if (!userDataLoaded) {
-    return (
-      <div style={{ minHeight: '100vh', background: t.bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <motion.div animate={{ rotate: 360 }} transition={{ duration: 1.4, repeat: Infinity, ease: 'linear' }}
-          style={{ width: 32, height: 32, borderRadius: '50%', border: `3px solid ${t.line}`, borderTopColor: t.primary }}/>
-      </div>
-    );
-  }
 
   const [tab, setTab] = useState('gen');
   const [subview, setSubview] = useState(null);
@@ -1890,11 +1867,22 @@ export default function App() {
   const [lessons, setLessons] = useLocalStorage(STORAGE_KEYS.lessons, {});
   const [badges, setBadges] = useLocalStorage(STORAGE_KEYS.badges, []);
   const [examData, setExamData] = useState(null);
+
+  const ready = !authLoading && (!user || userDataLoaded);
+
+  if (!ready || (!user && !guestMode)) {
+    return (
+      <div style={{ minHeight: '100vh', background: t.bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <motion.div animate={{ rotate: 360 }} transition={{ duration: 1.4, repeat: Infinity, ease: 'linear' }}
+          style={{ width: 32, height: 32, borderRadius: '50%', border: `3px solid ${t.line}`, borderTopColor: t.primary }}/>
+      </div>
+    );
+  }
+
   const [examLoading, setExamLoading] = useState(false);
   const [tutorActive, setTutorActive] = useState(false);
   const [err, setErr] = useState('');
 
-  // Save to Firestore when state changes
   useEffect(() => {
     if (!user || !userDataLoaded) return;
     saveToFirestore({ journeys, activeJourneyId, progress, memory, lessons, badges, dark });
