@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, createContext, useContext } from "react";
+import { useState, useEffect, useRef, createContext, useContext, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { marked } from 'marked';
 import hljs from 'highlight.js';
@@ -1712,7 +1712,7 @@ function TutorView({ lessonData, lessonTitle, moduleTitle, skill, curriculum, on
     setInput('');
     setLoading(true);
     try {
-      const lessonContext = lessonData ? `Current lesson: "${lessonTitle}" in ${moduleTitle} for "${skill}"
+      const lessonContext = lessonData ? `Current lesson: "${lessonTitle}" in ${moduleTitle} for "${currentSkill}"
 Lesson content:
 ${lessonData.sections?.map(s => `## ${s.heading}\n${s.content}`).join('\n\n') || ''}
 ${lessonData.keyPoints ? `Key points: ${lessonData.keyPoints.join(', ')}` : ''}` : '';
@@ -1896,6 +1896,12 @@ export default function App() {
     setCurriculum(j?.curriculum || null);
   }, [activeJourneyId, journeys]);
 
+  // Derive skill name from the active journey — prevents cross-contamination between courses
+  const currentSkill = useMemo(() => {
+    const j = journeys.find(j => j.id === activeJourneyId);
+    return j?.skill || skill;
+  }, [activeJourneyId, journeys, skill]);
+
   const ready = (guestMode || !authLoading || authTimedOut) && (!user || userDataLoaded);
 
   if (!ready) {
@@ -1932,7 +1938,13 @@ export default function App() {
     setProgress(p => ({ ...p, [journeyId]: typeof updater === 'function' ? updater(p[journeyId] || { xp: 0, completed: {}, streak: 0, lastVisit: null }) : updater }));
   };
 
+  const MAX_JOURNEYS = 4;
+
   const generate = async (skillName, scope) => {
+    if (journeys.length >= MAX_JOURNEYS) {
+      setErr(`Maximum of ${MAX_JOURNEYS} journeys reached. Delete an existing journey to create a new one.`);
+      return;
+    }
     setSkill(skillName); setErr(''); setGenerating(true);
     const cfg = SCOPE_CONFIG[scope] || SCOPE_CONFIG['Standard'];
     try {
@@ -1966,14 +1978,14 @@ CRITICAL: ${cfg.contentHint}`
     const cfg = SCOPE_CONFIG[curriculum?.scope] || SCOPE_CONFIG['Standard'];
     try {
       const data = await callAI(
-        `Write a detailed lesson: "${lesson.title}" in "${mod.title}" for a "${skill}" course.`,
+        `Write a detailed lesson: "${lesson.title}" in "${mod.title}" for a "${currentSkill}" course.`,
         `Expert university-level educator. Return ONLY JSON:
 {"title":"","summary":"2 sentences","sections":[{"heading":"","content":"<n>-word paragraph"}],"keyPoints":["x5"],"resources":[{"title":"","description":"1 sentence","icon":"<emoji>"}],"quiz":[{"question":"","options":["","","",""],"correct":<0-3>,"explanation":""}],"flashcards":[{"front":"term","back":"definition"}]}
 MUST contain ${cfg.numSections} sections. Each section MUST be ${cfg.lesWordCount} words minimum — NO shorter, NO fluff.
 ${curriculum?.scope === 'Mastery' ? `MASTERY LEVEL — NO STONE LEFT UNTURNED. This must read like a top-tier university lecture. Cover: historical context and motivation, formal definitions with notation, complete derivations step-by-step, multiple solved examples at increasing difficulty, common misconceptions with corrections, prerequisite knowledge links, edge cases, real-world applications, and performance/accuracy tradeoffs. Every section must contain entirely new information — zero repetition across sections.` : curriculum?.scope === 'Standard' ? `Provide thorough explanations, one detailed worked example, conceptual depth, and brief practical application.` : `Provide a concise overview with essential concepts and one clear worked example.`}
 For STEM/math/physics: include formal mathematical notation, complete derivations, at least 2 worked examples (one basic, one advanced), and common student misconceptions.
 For code/programming: include algorithm analysis (time + space complexity), complete working implementation with line-by-line comment explanations, test cases, performance tradeoffs, and real-world usage patterns.
-5 keyPoints, 3 resources, 5 quiz Qs (mix of conceptual and application), 6 flashcards.`, 'auto', skill
+5 keyPoints, 3 resources, 5 quiz Qs (mix of conceptual and application), 6 flashcards.`, 'auto', currentSkill
       );
       setLessonData(data);
       setLessons(l => ({ ...l, [cacheKey]: data }));
@@ -1988,7 +2000,7 @@ For code/programming: include algorithm analysis (time + space complexity), comp
     const cfg = SCOPE_CONFIG[curriculum?.scope] || SCOPE_CONFIG['Standard'];
     try {
       const data = await callAI(
-        `Rewrite "${lesson.title}" in "${mod.title}" for "${skill}" course.
+        `Rewrite "${lesson.title}" in "${mod.title}" for "${currentSkill}" course.
 Custom instructions: "${instructions}"
 This is a ${curriculum?.scope || 'Standard'} level lesson.`,
         `Expert university-level educator. Return ONLY JSON with the adapted lesson:
@@ -1996,7 +2008,7 @@ This is a ${curriculum?.scope || 'Standard'} level lesson.`,
 MUST contain ${cfg.numSections} sections. Each section MUST be ${cfg.lesWordCount} words minimum.
 ${curriculum?.scope === 'Mastery' ? `MASTERY — university level. Every concept must be developed from first principles, with complete derivations, multiple difficulty-tiered examples, misconceptions addressed, and real-world context. No repetition, no padding.` : `Thorough but accessible. Apply the custom instructions throughout while maintaining quality.`}
 For code topics: include full implementation with explanations, complexity analysis, and test cases.
-5 keyPoints, 3 resources, 5 quiz Qs, 6 flashcards.`, 'auto', skill
+5 keyPoints, 3 resources, 5 quiz Qs, 6 flashcards.`, 'auto', currentSkill
       );
       setLessons(l => ({ ...l, [cacheKey]: data }));
       setLessonData(data);

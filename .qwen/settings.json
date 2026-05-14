@@ -3,7 +3,9 @@
     "allow": [
       "Bash(npm *)",
       "Bash(npx *)",
-      "Bash(node *)"
+      "Bash(node *)",
+      "Bash(curl *)",
+      "Bash(python3 *)"
     ]
   },
   "$version": 4

@@ -1,10 +1,10 @@
 const ALLOWED_MODELS = ['lesson', 'code', 'curriculum', 'exam'];
 
 const MODEL_MAP = {
-  lesson:     { provider: 'openrouter', model: 'inclusionai/ring-2.6-1t:free' },
-  code:       { provider: 'groq', model: 'llama-3.3-70b-versatile' },
-  curriculum: { provider: 'groq', model: 'llama-3.3-70b-versatile' },
-  exam:       { provider: 'groq', model: 'llama-3.3-70b-versatile' },
+  lesson:     { provider: 'dashscope', model: 'qwen-max' },
+  code:       { provider: 'dashscope', model: 'qwen-max' },
+  curriculum: { provider: 'dashscope', model: 'deepseek-v3' },
+  exam:       { provider: 'dashscope', model: 'qwen-max' },
 };
 
 /**
@@ -32,8 +32,6 @@ export function validateInput(prompt, system, model) {
  */
 export async function callAI(prompt, system, model) {
   const { provider, model: actualModel } = MODEL_MAP[model] || MODEL_MAP.curriculum;
-  const isGroq = provider === 'groq';
-  const isOpenRouter = provider === 'openrouter';
 
   const body = {
     model: actualModel,
@@ -43,27 +41,21 @@ export async function callAI(prompt, system, model) {
     ],
   };
 
-  if (isGroq) {
-    body.response_format = { type: 'json_object' };
-  }
+  // DashScope supports response_format for JSON mode (works for both Qwen and DeepSeek models)
+  body.response_format = { type: 'json_object' };
 
   const fetchOptions = {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${isGroq ? process.env.GROQ_API_KEY : process.env.OPENROUTER_API_KEY}`,
+      'Authorization': `Bearer ${process.env.DASHSCOPE_API_KEY}`,
     },
     body: JSON.stringify(body),
   };
 
-  if (isOpenRouter) {
-    fetchOptions.headers['HTTP-Referer'] = 'https://skillforge.app';
-    fetchOptions.headers['X-Title'] = 'SkillForge';
-  }
-
   let response;
   try {
-    const base = isGroq ? 'https://api.groq.com/openai/v1/chat/completions' : 'https://openrouter.ai/api/v1/chat/completions';
+    const base = 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions';
     response = await fetch(base, fetchOptions);
   } catch (e) {
     console.error('Fetch error:', e);

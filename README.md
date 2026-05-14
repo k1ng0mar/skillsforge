@@ -5,7 +5,7 @@ AI-powered custom curriculum generator with spaced repetition learning.
 ### Features
 
 - **AI Curriculum Generation** — Describe what you want to learn, get a custom curriculum with modules and lessons
-- **Multi-Model AI Routing** — Curriculum/exams use Llama 3.3 via Groq; lessons use Ring 2.6 1T via OpenRouter free tier; code/programming topics detected and handled
+- **Multi-Model AI Routing** — Curriculum uses DeepSeek via direct API; lessons, code, and exams use Qwen-Max via DashScope (Alibaba) — both produce high-quality, detailed content with theoretical, practical, and real-world examples
 - **Three Depth Levels** — Crash Course (lean overview), Standard (thorough), Mastery (university-level: 8-12 modules, 5 sections × 300+ words, derivations, multi-tier examples, no stone left unturned)
 - **AI Tutor Mode** — Ask questions about any lesson in a live chat; uses the full lesson + curriculum context to answer
 - **Skill Tree** — Visual neural pathway showing your learning progress
@@ -108,16 +108,17 @@ npm start
 Create a `.env` file with your API keys:
 
 ```
-GROQ_API_KEY=your_groq_key_here
-OPENROUTER_API_KEY=your_openrouter_key_here
+# DashScope (Alibaba Model Studio) — one key for everything
+DASHSCOPE_API_KEY=your_dashscope_key_here
 
 # Supabase Configuration
 VITE_SUPABASE_URL=https://your-project-id.supabase.co
 VITE_SUPABASE_ANON_KEY=your-anon-key-here
 ```
 
-- **Groq** for curriculum/exams: [console.groq.com](https://console.groq.com) (free tier, llama-3.3-70b-versatile — 14,400 req/day)
-- **OpenRouter** for lessons (free tier — `inclusionai/ring-2.6-1t:free`, 50 req/day on free plan)
+- **DashScope** — get your key at [dashscope.console.aliyun.com](https://dashscope.console.aliyun.com)
+  - `qwen-max` for lessons, code, and exams (highest-quality reasoning)
+  - `deepseek-v3` for curriculum generation (strong structural output)
 - **Supabase** for auth and database: [supabase.com](https://supabase.com) (free tier)
 
 ### Production Build
@@ -138,8 +139,7 @@ Add these environment variables in **Vercel → Project → Settings → Environ
 
 | Name | Value |
 |------|-------|
-| `GROQ_API_KEY` | Your Groq API key |
-| `OPENROUTER_API_KEY` | Your OpenRouter API key |
+| `DASHSCOPE_API_KEY` | Your DashScope API key |
 | `VITE_SUPABASE_URL` | Your Supabase project URL |
 | `VITE_SUPABASE_ANON_KEY` | Your Supabase anon key |
 
@@ -149,10 +149,12 @@ The project includes:
 
 ### AI Model Routing
 
-| Task | Model | Provider |
+| Task | Model | Platform |
 |------|-------|----------|
-| Curriculum + Exams | `llama-3.3-70b-versatile` | Groq (14,400 req/day free) |
-| Lessons | `inclusionai/ring-2.6-1t:free` | OpenRouter (50 req/day free) |
+| Curriculum | `deepseek-v3` | DashScope (Alibaba) |
+| Lessons | `qwen-max` | DashScope (Alibaba) |
+| Code/Programming | `qwen-max` | DashScope (Alibaba) |
+| Exams | `qwen-max` | DashScope (Alibaba) |
 
 ### Data
 

@@ -42,7 +42,7 @@ export default defineConfig({
             },
           },
           {
-            urlPattern: /^https:\/\/api\.groq\.com\/.*/i,
+            urlPattern: /^https:\/\/dashscope\.aliyuncs\.com\/.*/i,
             handler: 'NetworkOnly',
           },
         ],
