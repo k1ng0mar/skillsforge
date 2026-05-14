@@ -1812,7 +1812,7 @@ Be encouraging but honest. Use examples, analogies, and counterexamples.`
 }
 
 /* ─── ROOT ─── */
-const DEFAULT_PROGRESS = { xp: 0, completed: {}, streak: 0, lastVisit: null };
+const DEFAULT_PROGRESS = {};
 const DEFAULT_MEMORY = { cards: [], history: [] };
 
 export default function App() {
@@ -1824,7 +1824,7 @@ export default function App() {
     setDark(next);
   }};
 
-  const { user, authLoading, authError, guestMode, handleLogout, handleGuest, exitGuest, saveToSupabase, loadUserData, handleLogin, handleSignup } = useAuth();
+  const { user, authLoading, authError, guestMode, handleLogout, handleGuest, exitGuest, saveToSupabase, loadUserData, handleLogin, handleSignup, handleOAuth } = useAuth();
   const [userDataLoaded, setUserDataLoaded] = useState(false);
   const [authTimedOut, setAuthTimedOut] = useState(false);
 
@@ -1876,34 +1876,6 @@ export default function App() {
   const [lessons, setLessons] = useLocalStorage(STORAGE_KEYS.lessons, {});
   const [badges, setBadges] = useLocalStorage(STORAGE_KEYS.badges, []);
   const [examData, setExamData] = useState(null);
-
-  const ready = (!authLoading || authTimedOut) && (!user || userDataLoaded);
-
-  if (!ready) {
-    return (
-      <div style={{ minHeight: '100vh', background: t.bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <motion.div animate={{ rotate: 360 }} transition={{ duration: 1.4, repeat: Infinity, ease: 'linear' }}
-          style={{ width: 32, height: 32, borderRadius: '50%', border: `3px solid ${t.line}`, borderTopColor: t.primary }}/>
-      </div>
-    );
-  }
-
-  if (!user && !guestMode) {
-    return (
-      <Ctx.Provider value={ctx}>
-        <style>{BASE}</style>
-        <AuthView
-          onLogin={handleLogin}
-          onSignup={handleSignup}
-          onGuest={handleGuest}
-          error={authError}
-          t={t}
-          dark={dark}
-        />
-      </Ctx.Provider>
-    );
-  }
-
   const [examLoading, setExamLoading] = useState(false);
   const [tutorActive, setTutorActive] = useState(false);
   const [err, setErr] = useState('');
@@ -1923,6 +1895,34 @@ export default function App() {
     const j = journeys.find(j => j.id === activeJourneyId);
     setCurriculum(j?.curriculum || null);
   }, [activeJourneyId, journeys]);
+
+  const ready = (guestMode || !authLoading || authTimedOut) && (!user || userDataLoaded);
+
+  if (!ready) {
+    return (
+      <div style={{ minHeight: '100vh', background: t.bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <motion.div animate={{ rotate: 360 }} transition={{ duration: 1.4, repeat: Infinity, ease: 'linear' }}
+          style={{ width: 32, height: 32, borderRadius: '50%', border: `3px solid ${t.line}`, borderTopColor: t.primary }}/>
+      </div>
+    );
+  }
+
+  if (!user && !guestMode) {
+    return (
+      <Ctx.Provider value={ctx}>
+        <style>{BASE}</style>
+        <AuthView
+          onLogin={handleLogin}
+          onSignup={handleSignup}
+          onGuest={handleGuest}
+          onOAuth={handleOAuth}
+          error={authError}
+          t={t}
+          dark={dark}
+        />
+      </Ctx.Provider>
+    );
+  }
 
   const getProgress = (journeyId) => {
     return progress[journeyId] || { xp: 0, completed: {}, streak: 0, lastVisit: null };
@@ -2207,7 +2207,7 @@ Exactly 10 questions covering all modules.`
             {dark ? '○' : '●'}
           </button>
           {guestMode ? (
-            <button onClick={() => setGuestMode(false)}
+            <button onClick={exitGuest}
               style={{ height: 30, padding: '0 10px', borderRadius: 7, background: t.surface, border: `1px solid ${t.line}`, display: 'flex', alignItems: 'center', gap: 4, color: t.amber, fontSize: 12, fontFamily: ff.sans }}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
               Exit Guest

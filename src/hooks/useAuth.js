@@ -47,6 +47,10 @@ export function useAuth() {
   }, []);
 
   const handleSignup = async (email, password) => {
+    if (!supabase) {
+      setAuthError('Authentication not configured. Please set up Supabase.');
+      return;
+    }
     setAuthError('');
     try {
       const { error } = await supabase.auth.signUp({ email, password });
@@ -57,6 +61,10 @@ export function useAuth() {
   };
 
   const handleLogin = async (email, password) => {
+    if (!supabase) {
+      setAuthError('Authentication not configured. Please set up Supabase.');
+      return;
+    }
     setAuthError('');
     try {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
@@ -67,7 +75,22 @@ export function useAuth() {
   };
 
   const handleLogout = async () => {
+    if (!supabase) return;
     await supabase.auth.signOut();
+  };
+
+  const handleOAuth = async (provider) => {
+    if (!supabase) {
+      setAuthError('Authentication not configured. Please set up Supabase.');
+      return;
+    }
+    setAuthError('');
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({ provider });
+      if (error) setAuthError(error.message);
+    } catch (err) {
+      setAuthError(err.message);
+    }
   };
 
   const handleGuest = () => {
@@ -114,6 +137,7 @@ export function useAuth() {
     handleSignup,
     handleLogin,
     handleLogout,
+    handleOAuth,
     handleGuest,
     exitGuest,
     saveToSupabase,
