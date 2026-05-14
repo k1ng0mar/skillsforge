@@ -50,7 +50,7 @@ npm install
 
 1. Create a project at [supabase.com](https://supabase.com)
 2. Enable **Authentication** → Sign-in method → **Email/Password**
-3. Go to **SQL Editor** and run this to create the users table:
+3. Go to **SQL Editor** and run this to create the users table with RLS policies:
 
 ```sql
 CREATE TABLE users (
@@ -65,13 +65,27 @@ CREATE TABLE users (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Enable RLS
+-- Enable Row Level Security
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 
--- Allow authenticated users to upsert their own data
-CREATE POLICY "Users can upsert own data" ON users
-  FOR ALL USING (auth.uid()::text = id);
+-- Policy 1: Users can READ their own row
+CREATE POLICY "Users can read own data" ON users
+  FOR SELECT USING (auth.uid()::text = id);
+
+-- Policy 2: Users can INSERT their own row (needed for upsert on first login)
+CREATE POLICY "Users can insert own data" ON users
+  FOR INSERT WITH CHECK (auth.uid()::text = id);
+
+-- Policy 3: Users can UPDATE their own row
+CREATE POLICY "Users can update own data" ON users
+  FOR UPDATE USING (auth.uid()::text = id);
+
+-- Policy 4: Users can DELETE their own row
+CREATE POLICY "Users can delete own data" ON users
+  FOR DELETE USING (auth.uid()::text = id);
 ```
+
+> **Why separate policies?** The original `FOR ALL` with `USING` did not cover `INSERT` operations. `upsert()` internally performs an `INSERT` when the row doesn't exist yet, which requires a `WITH CHECK` policy. Without it, new logins get a 401/permission error.
 
 4. Get your credentials from **Settings → API**
 5. Update your `.env` file with your Supabase URL and anon key (see Environment section below)
