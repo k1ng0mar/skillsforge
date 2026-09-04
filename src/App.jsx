@@ -4,8 +4,7 @@ import { marked } from 'marked';
 import hljs from 'highlight.js';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
-import { useAuth } from './hooks/useAuth';
-import AuthView from './components/AuthView';
+import { callAI, loadProvider, saveProvider, loadKeys, saveKey, PRESETS, fetchModels, availableModels } from './ai';
 import { ff } from './constants';
 
 /* ─── MARKDOWN + RENDERING ─── */
@@ -82,8 +81,6 @@ function checkNewBadges(progress, allProgress, earned) {
   return BADGE_DEFS.filter(b => !earned.includes(b.id) && b.check(progress, allProgress)).map(b => b.id);
 }
 
-const API_BASE = '';
-
 /* ─── SM-2 SPACED REPETITION ─── */
 function sm2(ease, interval, rep, rating) {
   let e = ease + (0.1 - (5 - rating) * (0.08 + (5 - rating) * 0.02));
@@ -104,7 +101,7 @@ function loadStorage(key, fallback) {
     if (e.name === 'QuotaExceededError') {
       console.error('localStorage quota exceeded — clearing oldest lessons');
       const keys = Object.keys(localStorage).filter(k => k.startsWith('sf_'));
-      for (const k of keys) { try { localStorage.removeItem(k); break; } catch (e) { /* skip locked keys */ } }
+      for (const k of keys) { try { localStorage.removeItem(k); break; } catch (e) { /* Skip locked keys */ } }
     }
     return fallback;
   }
@@ -170,24 +167,6 @@ const Ctx = createContext(null);
 const useT = () => useContext(Ctx);
 
 /* ─── AI ─── */
-const CODE_KEYWORDS = new Set([
-  'python', 'javascript', 'typescript', 'java', 'c++', 'c#', 'rust', 'go', 'golang',
-  'swift', 'kotlin', 'ruby', 'php', 'sql', 'html', 'css', 'react', 'vue', 'angular',
-  'node', 'django', 'flask', 'spring', 'rails', 'laravel', 'nextjs', 'next.js',
-  'api', 'backend', 'frontend', 'fullstack', 'full-stack', 'web dev', 'web development',
-  'algorithm', 'data structure', 'dsa', 'competitive programming', 'coding',
-  'programming', 'software', 'machine learning', 'ml', 'deep learning', 'ai',
-  'data science', 'pandas', 'numpy', 'tensorflow', 'pytorch', 'keras', 'scikit',
-  'database', 'mongodb', 'postgresql', 'redis', 'graphql', 'rest api', 'docker',
-  'kubernetes', 'devops', 'cloud', 'aws', 'azure', 'gcp', 'firebase', 'linux',
-  'bash', 'shell', 'scripting', 'automation', 'CI/CD', 'git', 'github',
-]);
-
-function isCodeRelated(skillName, lessonTitle = '') {
-  const combined = `${skillName} ${lessonTitle}`.toLowerCase();
-  return [...CODE_KEYWORDS].some(k => combined.includes(k));
-}
-
 const SCOPE_CONFIG = {
   'Crash Course': {
     modDesc: '3-4 modules.',
@@ -214,25 +193,6 @@ Every word of every section must contain NEW information — never repeat what w
     numSections: 5,
   },
 };
-
-async function callAI(prompt, sys, modelHint = 'curriculum', skillName = '') {
-  let model = modelHint;
-  if (modelHint === 'auto') {
-    model = isCodeRelated(skillName, prompt.slice(0, 250)) ? 'code' : 'lesson';
-  }
-  const r = await fetch(`${API_BASE}/api/ai`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ prompt, system: sys + "\n\nReturn ONLY valid JSON. No markdown fences, no preamble.", model }),
-  });
-
-  if (!r.ok) throw new Error(r.status);
-
-  const d = await r.json();
-  if (d.error) throw new Error(d.error);
-
-  return d;
-}
 
 /* ─── PRIMITIVES ─── */
 function Bar({ pct, color, h = 4, delay = 0 }) {
@@ -579,10 +539,12 @@ const GEN_STEPS = [
 function GeneratingView({ skill }) {
   const { t, dark } = useT();
   const [step, setStep] = useState(0);
+  const [elapsed, setElapsed] = useState(0);
 
   useEffect(() => {
     const id = setInterval(() => setStep(s => Math.min(s + 1, GEN_STEPS.length - 1)), 1300);
-    return () => clearInterval(id);
+    const clock = setInterval(() => setElapsed(e => e + 1), 1000);
+    return () => { clearInterval(id); clearInterval(clock); };
   }, []);
 
   return (
@@ -622,6 +584,11 @@ function GeneratingView({ skill }) {
           {GEN_STEPS[step]}
         </motion.p>
       </AnimatePresence>
+      {step === GEN_STEPS.length - 1 && (
+        <p style={{ fontFamily: ff.mono, fontSize: 11, color: t.muted, marginTop: 14 }}>
+          Still working… {elapsed}s
+        </p>
+      )}
     </div>
   );
 }
@@ -1727,8 +1694,8 @@ Be encouraging but honest. Use examples, analogies, and counterexamples.`
       );
       const tutorMsg = { role: 'assistant', content: data.content || data.response || JSON.stringify(data) };
       setMessages(prev => [...prev, tutorMsg]);
-    } catch {
-      setMessages(prev => [...prev, { role: 'assistant', content: 'Sorry, I had trouble responding. Please try again.' }]);
+    } catch (e) {
+      setMessages(prev => [...prev, { role: 'assistant', content: e?.message || 'Sorry, I had trouble responding. Please try again.' }]);
     }
     setLoading(false);
   };
@@ -1824,38 +1791,6 @@ export default function App() {
     setDark(next);
   }};
 
-  const { user, authLoading, authError, guestMode, handleLogout, handleGuest, exitGuest, saveToSupabase, loadUserData, handleLogin, handleSignup, handleOAuth } = useAuth();
-  const [userDataLoaded, setUserDataLoaded] = useState(false);
-  const [authTimedOut, setAuthTimedOut] = useState(false);
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      if (authLoading) setAuthTimedOut(true);
-    }, 8000);
-    return () => clearTimeout(timer);
-  }, [authLoading]);
-
-  useEffect(() => {
-    if (!user) {
-      setUserDataLoaded(true);
-      return;
-    }
-    const loadData = async () => {
-      const data = await loadUserData();
-      if (data) {
-        if (data.journeys) setJourneys(data.journeys);
-        if (data.activeJourneyId !== undefined) setActiveJourneyId(data.activeJourneyId);
-        if (data.progress) setProgress(data.progress);
-        if (data.memory) setMemory(data.memory);
-        if (data.lessons) setLessons(data.lessons);
-        if (data.badges) setBadges(data.badges);
-        if (data.dark !== undefined) setDark(data.dark);
-      }
-      setUserDataLoaded(true);
-    };
-    loadData();
-  }, [user, loadUserData]);
-
   const [tab, setTab] = useState('gen');
   const [subview, setSubview] = useState(null);
   const [skill, setSkill] = useState('');
@@ -1879,11 +1814,19 @@ export default function App() {
   const [examLoading, setExamLoading] = useState(false);
   const [tutorActive, setTutorActive] = useState(false);
   const [err, setErr] = useState('');
+  const [showSettings, setShowSettings] = useState(false);
+  const [provider, setProvider] = useState(loadProvider);
+  const [draft, setDraft] = useState(null);
+  const [fetchedModels, setFetchedModels] = useState([]);
+  const [fetchingModels, setFetchingModels] = useState(false);
+  const [modelsMsg, setModelsMsg] = useState('');
 
-  useEffect(() => {
-    if (!user || !userDataLoaded) return;
-    saveToSupabase({ journeys, activeJourneyId, progress, memory, lessons, badges, dark });
-  }, [user, userDataLoaded, journeys, activeJourneyId, progress, memory, lessons, badges, dark]);
+  const switchPreset = (baseUrl, model) => {
+    if (draft && draft.baseUrl) saveKey(draft.baseUrl, draft.apiKey || '');
+    const keys = loadKeys();
+    setDraft(d => ({ ...d, baseUrl, model, apiKey: keys[baseUrl] || '' }));
+    setFetchedModels([]); setModelsMsg('');
+  };
 
   useEffect(() => {
     if (!activeJourneyId && journeys.length > 0) {
@@ -1901,34 +1844,6 @@ export default function App() {
     const j = journeys.find(j => j.id === activeJourneyId);
     return j?.skill || skill;
   }, [activeJourneyId, journeys, skill]);
-
-  const ready = (guestMode || !authLoading || authTimedOut) && (!user || userDataLoaded);
-
-  if (!ready) {
-    return (
-      <div style={{ minHeight: '100vh', background: t.bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <motion.div animate={{ rotate: 360 }} transition={{ duration: 1.4, repeat: Infinity, ease: 'linear' }}
-          style={{ width: 32, height: 32, borderRadius: '50%', border: `3px solid ${t.line}`, borderTopColor: t.primary }}/>
-      </div>
-    );
-  }
-
-  if (!user && !guestMode) {
-    return (
-      <Ctx.Provider value={ctx}>
-        <style>{BASE}</style>
-        <AuthView
-          onLogin={handleLogin}
-          onSignup={handleSignup}
-          onGuest={handleGuest}
-          onOAuth={handleOAuth}
-          error={authError}
-          t={t}
-          dark={dark}
-        />
-      </Ctx.Provider>
-    );
-  }
 
   const getProgress = (journeyId) => {
     return progress[journeyId] || { xp: 0, completed: {}, streak: 0, lastVisit: null };
@@ -1960,8 +1875,8 @@ CRITICAL: ${cfg.contentHint}`
       setJourneys(prev => [...prev, journey]);
       setActiveJourneyId(jid);
       setTab('journey');
-    } catch {
-      setErr('Failed to generate curriculum. Please try again.');
+    } catch (e) {
+      setErr(e?.message || 'Failed to generate curriculum. Please try again.');
     }
     setGenerating(false);
   };
@@ -1985,12 +1900,12 @@ MUST contain ${cfg.numSections} sections. Each section MUST be ${cfg.lesWordCoun
 ${curriculum?.scope === 'Mastery' ? `MASTERY LEVEL — NO STONE LEFT UNTURNED. This must read like a top-tier university lecture. Cover: historical context and motivation, formal definitions with notation, complete derivations step-by-step, multiple solved examples at increasing difficulty, common misconceptions with corrections, prerequisite knowledge links, edge cases, real-world applications, and performance/accuracy tradeoffs. Every section must contain entirely new information — zero repetition across sections.` : curriculum?.scope === 'Standard' ? `Provide thorough explanations, one detailed worked example, conceptual depth, and brief practical application.` : `Provide a concise overview with essential concepts and one clear worked example.`}
 For STEM/math/physics: include formal mathematical notation, complete derivations, at least 2 worked examples (one basic, one advanced), and common student misconceptions.
 For code/programming: include algorithm analysis (time + space complexity), complete working implementation with line-by-line comment explanations, test cases, performance tradeoffs, and real-world usage patterns.
-5 keyPoints, 3 resources, 5 quiz Qs (mix of conceptual and application), 6 flashcards.`, 'auto', currentSkill
+5 keyPoints, 3 resources, 5 quiz Qs (mix of conceptual and application), 6 flashcards.`
       );
       setLessonData(data);
       setLessons(l => ({ ...l, [cacheKey]: data }));
-    } catch {
-      setErr('Failed to load lesson. Please try again.');
+    } catch (e) {
+      setErr(e?.message || 'Failed to load lesson. Please try again.');
     }
     setLessonLoading(false);
   };
@@ -2008,13 +1923,13 @@ This is a ${curriculum?.scope || 'Standard'} level lesson.`,
 MUST contain ${cfg.numSections} sections. Each section MUST be ${cfg.lesWordCount} words minimum.
 ${curriculum?.scope === 'Mastery' ? `MASTERY — university level. Every concept must be developed from first principles, with complete derivations, multiple difficulty-tiered examples, misconceptions addressed, and real-world context. No repetition, no padding.` : `Thorough but accessible. Apply the custom instructions throughout while maintaining quality.`}
 For code topics: include full implementation with explanations, complexity analysis, and test cases.
-5 keyPoints, 3 resources, 5 quiz Qs, 6 flashcards.`, 'auto', currentSkill
+5 keyPoints, 3 resources, 5 quiz Qs, 6 flashcards.`
       );
       setLessons(l => ({ ...l, [cacheKey]: data }));
       setLessonData(data);
       return true;
-    } catch {
-      setErr('Failed to regenerate lesson.');
+    } catch (e) {
+      setErr(e?.message || 'Failed to regenerate lesson.');
       return false;
     }
   };
@@ -2147,8 +2062,8 @@ Exactly 10 questions covering all modules.`
       const exam = { title: data.title || `${curriculum.title} Final Exam`, questions: data.questions || data.quiz || [] };
       setExamData(exam);
       setLessons(l => ({ ...l, [cacheKey]: exam }));
-    } catch {
-      setErr('Failed to generate exam. Please try again.');
+    } catch (e) {
+      setErr(e?.message || 'Failed to generate exam. Please try again.');
     }
     setExamLoading(false);
   };
@@ -2214,25 +2129,95 @@ Exactly 10 questions covering all modules.`
           SkillsForge
         </span>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <button onClick={ctx.toggle}
-            style={{ width: 30, height: 30, borderRadius: 7, background: t.surface, border: `1px solid ${t.line}`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: t.muted, fontSize: 13 }}>
-            {dark ? '○' : '●'}
+          <button onClick={ctx.toggle} title="Toggle theme"
+            style={{ width: 30, height: 30, borderRadius: 7, background: t.surface, border: `1px solid ${t.line}`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: t.muted }}>
+            {dark ? (
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+            ) : (
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+            )}
           </button>
-          {guestMode ? (
-            <button onClick={exitGuest}
-              style={{ height: 30, padding: '0 10px', borderRadius: 7, background: t.surface, border: `1px solid ${t.line}`, display: 'flex', alignItems: 'center', gap: 4, color: t.amber, fontSize: 12, fontFamily: ff.sans }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-              Exit Guest
-            </button>
-          ) : user ? (
-            <button onClick={handleLogout}
-              style={{ height: 30, padding: '0 10px', borderRadius: 7, background: t.surface, border: `1px solid ${t.line}`, display: 'flex', alignItems: 'center', gap: 4, color: t.muted, fontSize: 12, fontFamily: ff.sans }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-              Logout
-            </button>
-          ) : null}
+          <button onClick={() => { setDraft(loadProvider()); setFetchedModels([]); setModelsMsg(''); setShowSettings(true); }} title="AI settings"
+            style={{ width: 30, height: 30, borderRadius: 7, background: t.surface, border: `1px solid ${t.line}`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: t.muted, position: 'relative' }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.9 2.9l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.2a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.9-2.9l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.2a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.9-2.9l.1.1a1.7 1.7 0 0 0 1.9.3h.1a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.2a1.7 1.7 0 0 0 1 1.5h.1a1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.9 2.9l-.1.1a1.7 1.7 0 0 0-.3 1.9v.1a1.7 1.7 0 0 0 1.5 1h.2a2 2 0 1 1 0 4h-.2a1.7 1.7 0 0 0-1.5 1z"/></svg>
+            {!provider.apiKey && <span style={{ position: 'absolute', top: 5, right: 5, width: 7, height: 7, borderRadius: 999, background: t.amber }} />}
+          </button>
         </div>
       </div>
+
+      {showSettings && draft && (
+        <div onClick={() => setShowSettings(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', zIndex: 90, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: t.surface, border: `1px solid ${t.line}`, borderRadius: 14, padding: 20, width: '100%', maxWidth: 380 }}>
+            <h3 style={{ fontFamily: ff.serif, fontSize: 18, fontWeight: 700, color: t.txt, marginBottom: 4 }}>AI Provider</h3>
+            <p style={{ fontFamily: ff.sans, fontSize: 12, color: t.muted, marginBottom: 12 }}>OpenAI compatible. Stays in this browser.</p>
+            <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
+              {Object.entries(PRESETS).map(([id, p]) => (
+                <button key={id} onClick={() => switchPreset(p.baseUrl, p.models[0])}
+                  style={{ fontFamily: ff.mono, fontSize: 11, padding: '6px 12px', borderRadius: 999, cursor: 'pointer',
+                    background: draft.baseUrl === p.baseUrl ? t.primary : 'transparent',
+                    color: draft.baseUrl === p.baseUrl ? '#000' : t.muted, border: `1px solid ${t.line}` }}>
+                  {p.label}
+                </button>
+              ))}
+              <button onClick={() => switchPreset('', '')}
+                style={{ fontFamily: ff.mono, fontSize: 11, padding: '6px 12px', borderRadius: 999, cursor: 'pointer',
+                  background: draft.baseUrl && !Object.values(PRESETS).some(p => p.baseUrl === draft.baseUrl) || !draft.baseUrl ? t.pDim : 'transparent',
+                  color: draft.baseUrl && Object.values(PRESETS).some(p => p.baseUrl === draft.baseUrl) ? t.muted : t.primary, border: `1px solid ${t.line}` }}>
+                Custom
+              </button>
+            </div>
+            {[['baseUrl', 'Base URL', 'https://...'], ['apiKey', 'API key', 'sk-...']].map(([k, label, ph]) => (
+              <label key={k} style={{ display: 'block', marginBottom: 10 }}>
+                <span style={{ fontFamily: ff.mono, fontSize: 10, color: t.muted, textTransform: 'uppercase', letterSpacing: 0.8 }}>{label}</span>
+                <input type={k === 'apiKey' ? 'password' : 'text'} value={draft[k] || ''} placeholder={ph}
+                  onChange={e => setDraft(d => ({ ...d, [k]: e.target.value.trim() }))}
+                  style={{ width: '100%', marginTop: 4, background: t.bg, border: `1px solid ${t.line}`, borderRadius: 8, padding: '9px 11px', color: t.txt, fontSize: 13, fontFamily: ff.mono }}/>
+              </label>
+            ))}
+            <label style={{ display: 'block', marginBottom: 10 }}>
+              <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span style={{ fontFamily: ff.mono, fontSize: 10, color: t.muted, textTransform: 'uppercase', letterSpacing: 0.8 }}>Model</span>
+                <button onClick={async () => {
+                    setFetchingModels(true); setModelsMsg('');
+                    try {
+                      const ids = await fetchModels(draft.baseUrl, draft.apiKey);
+                      setFetchedModels(ids);
+                      setModelsMsg(`${ids.length} models found.`);
+                      setDraft(d => ({ ...d, model: ids.includes(d.model) ? d.model : ids[0] }));
+                    } catch (e) { setModelsMsg(e.message || 'Fetch failed.'); }
+                    setFetchingModels(false);
+                  }}
+                  disabled={fetchingModels}
+                  style={{ fontFamily: ff.mono, fontSize: 10, color: t.primary, border: `1px solid ${t.pLine}`, borderRadius: 999, padding: '3px 10px', cursor: fetchingModels ? 'wait' : 'pointer', opacity: fetchingModels ? 0.5 : 1 }}>
+                  {fetchingModels ? 'Fetching…' : 'Fetch models'}
+                </button>
+              </span>
+              <select value={availableModels(draft, fetchedModels).includes(draft.model) && draft.model ? draft.model : '__custom'}
+                onChange={e => setDraft(d => ({ ...d, model: e.target.value === '__custom' ? '' : e.target.value }))}
+                style={{ width: '100%', marginTop: 8, background: t.bg, border: `1px solid ${t.line}`, borderRadius: 8, padding: '9px 11px', color: t.txt, fontSize: 13, fontFamily: ff.mono }}>
+                {availableModels(draft, fetchedModels).filter(Boolean).map(m => <option key={m} value={m}>{m}</option>)}
+                <option value="__custom">Custom…</option>
+              </select>
+              {(!availableModels(draft, fetchedModels).includes(draft.model) || !draft.model) && (
+                <input value={draft.model || ''} placeholder="provider/model-id"
+                  onChange={e => setDraft(d => ({ ...d, model: e.target.value.trim() }))}
+                  style={{ width: '100%', marginTop: 6, background: t.bg, border: `1px solid ${t.line}`, borderRadius: 8, padding: '9px 11px', color: t.txt, fontSize: 13, fontFamily: ff.mono }}/>
+              )}
+              {!!modelsMsg && <span style={{ display: 'block', marginTop: 6, fontFamily: ff.mono, fontSize: 11, color: t.muted }}>{modelsMsg}</span>}
+            </label>
+            <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+              <button onClick={() => { saveProvider(draft); saveKey(draft.baseUrl, draft.apiKey); setProvider(draft); setShowSettings(false); }}
+                style={{ flex: 1, background: t.primary, color: '#000', border: 'none', borderRadius: 8, padding: '10px', fontFamily: ff.sans, fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
+                Save
+              </button>
+              <button onClick={() => setShowSettings(false)}
+                style={{ background: 'transparent', color: t.muted, border: `1px solid ${t.line}`, borderRadius: 8, padding: '10px 16px', fontFamily: ff.sans, fontSize: 13, cursor: 'pointer' }}>
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* error toast */}
       <AnimatePresence>

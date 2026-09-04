@@ -41,18 +41,11 @@ export default defineConfig({
               expiration: { maxEntries: 10, maxAgeSeconds: 60 * 60 * 24 * 365 },
             },
           },
-          {
-            urlPattern: /^https:\/\/dashscope\.aliyuncs\.com\/.*/i,
-            handler: 'NetworkOnly',
-          },
         ],
       },
     }),
   ],
   server: {
     host: '0.0.0.0',
-    proxy: {
-      '/api': 'http://localhost:3001',
-    },
   },
 });
